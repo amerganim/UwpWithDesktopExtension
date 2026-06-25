@@ -120,9 +120,11 @@ namespace WPF
             AppServiceConnectionStatus status = await _connection.OpenAsync();
             if (status != AppServiceConnectionStatus.Success)
             {
-                LogManager.Instance.WriteLogs($"App-service connection failed: {status}.");
-                System.Windows.MessageBox.Show(status.ToString());
-                IsEnabled = false;
+                // Don't pop a modal dialog: this runs tray-only at logon, possibly before the
+                // UWP background host is ready. Log and retry shortly.
+                LogManager.Instance.WriteLogs($"App-service connection failed: {status}; retrying in 5s.");
+                await Task.Delay(TimeSpan.FromSeconds(5));
+                InitializeAppServiceConnection();
             }
         }
 
@@ -196,10 +198,28 @@ namespace WPF
                 return;
             }
 
-            var request = new ValueSet { { "D1", d1 }, { "D2", d2 } };
-            AppServiceResponse response = await _connection.SendMessageAsync(request);
-            double result = (double)response.Message["RESULT"];
-            tbResult.Text = result.ToString();
+            try
+            {
+                var request = new ValueSet { { "D1", d1 }, { "D2", d2 } };
+                AppServiceResponse response = await _connection.SendMessageAsync(request);
+
+                if (response.Status == AppServiceResponseStatus.Success &&
+                    response.Message.TryGetValue("RESULT", out object? value) &&
+                    value is double result)
+                {
+                    tbResult.Text = result.ToString();
+                }
+                else
+                {
+                    LogManager.Instance.WriteLogs($"Calc request returned no result (status={response.Status}).");
+                    tbResult.Text = "?";
+                }
+            }
+            catch (Exception ex)
+            {
+                LogManager.Instance.WriteLogs($"Calc request failed: {ex.Message}");
+                tbResult.Text = "?";
+            }
         }
 
         /// <summary>

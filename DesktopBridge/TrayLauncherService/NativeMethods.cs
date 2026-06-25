@@ -107,6 +107,19 @@ namespace TrayLauncherService
         [DllImport("kernel32.dll", SetLastError = true)]
         public static extern bool CloseHandle(IntPtr hObject);
 
+        // FOLDERID_LocalAppData - resolves to <user>\AppData\Local for a given user token.
+        public static readonly Guid FOLDERID_LocalAppData = new("F1B32785-6FBA-4FCF-9D55-7B8E7F157091");
+
+        [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
+        public static extern int SHGetKnownFolderPath(
+            [MarshalAs(UnmanagedType.LPStruct)] Guid rfid,
+            uint dwFlags,
+            IntPtr hToken,
+            out IntPtr ppszPath);
+
+        [DllImport("ole32.dll")]
+        public static extern void CoTaskMemFree(IntPtr pv);
+
         /// <summary>
         /// Returns the Application User Model ID (PFN!AppId) of the current process when it
         /// runs with package identity. Returns APPMODEL_ERROR_NO_PACKAGE otherwise.

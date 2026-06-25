@@ -18,23 +18,26 @@ UWP app + full-trust WPF extension + a packaged LocalSystem Windows service.
 
 A LocalSystem service runs in **session 0** and cannot show UI, and any process it launches
 directly has **no MSIX package identity** — but `AppServiceConnection` requires package identity.
-To satisfy both, the service does **not** launch `WPF.exe` directly. Instead:
+To get identity **and** show only the tray (not the UWP UI), WPF is also declared as a hidden
+full-trust app entry (`Application Id="TrayApp"`, `AppListEntry="none"`) with an
+**AppExecutionAlias** (`DesktopBridgeTray.exe`). The service launches that alias:
 
 1. `TrayLauncherService` gets the active console session token
    (`WTSGetActiveConsoleSessionId` → `WTSQueryUserToken` → `DuplicateTokenEx`).
-2. It launches `explorer.exe shell:AppsFolder\<AUMID>` in that session with
-   `CreateProcessAsUser`, which **activates the packaged UWP app with full identity**.
-3. The UWP app's existing flow calls `FullTrustProcessLauncher.LaunchFullTrustProcessForCurrentAppAsync()`,
-   which starts **WPF** with package identity.
-4. WPF shows the tray icon and opens the `AppServiceConnection` to `SampleInteropService` — so
-   the UWP ↔ WPF IPC works.
+2. It resolves the per-user alias path
+   `%LOCALAPPDATA%\Microsoft\WindowsApps\DesktopBridgeTray.exe` (`SHGetKnownFolderPath` with the
+   user token) and starts it with `CreateProcessAsUser`. Launching the alias gives the process
+   **full package identity**, and only the **tray icon** appears (no UWP UI).
+3. WPF opens the `AppServiceConnection` to `SampleInteropService` → the UWP background host
+   activates headlessly → **UWP ↔ WPF IPC works**.
+4. When the user later launches the **UWP app** from Start, its `MainPage` calls
+   `FullTrustProcessLauncher`, which starts a second WPF instance; the single-instance guard sees
+   the tray instance already running and sends it `WM_SHOWME`, so the **WPF window is shown**.
 
-The service resolves the package AUMID from its own package identity
-(`GetCurrentApplicationUserModelId`). For non-packaged manual testing you can override it with the
-`TRAYLAUNCHER_AUMID` environment variable (full `PFN!App`, or just the package family name).
+`TRAYLAUNCHER_ALIAS` (full path or bare exe name) can override the alias path for manual testing.
 
-> Tradeoff (chosen design): activating the packaged app means the UWP window may appear when the
-> service brings the app up. This is the reliable path that keeps package identity and IPC intact.
+> The service launches **WPF** (same package) directly via its alias — it never activates the UWP
+> UI, so installation/logon brings up only the tray icon.
 
 ## Packaged service manifest wiring
 
@@ -54,6 +57,9 @@ In [`WAPP/Package.appxmanifest`](WAPP/Package.appxmanifest):
   (required to install a packaged service and run it as LocalSystem).
 - `<rescap:Capability Name="runFullTrust" />` (existing, for the WPF full-trust process).
 - `Windows.Desktop` min version raised to **10.0.19041** (packaged services need Windows 10 2004+).
+- A second hidden full-trust `Application Id="TrayApp"` (`Executable="WPF\WPF.exe"`,
+  `AppListEntry="none"`) with a `uap5:AppExecutionAlias` (`DesktopBridgeTray.exe`) — this is what the
+  service launches so WPF starts with identity, tray-only.
 
 The service is installed when the package is installed and removed on uninstall.
 

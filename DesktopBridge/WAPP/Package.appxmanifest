@@ -4,9 +4,10 @@
   xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
   xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
   xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  xmlns:uap5="http://schemas.microsoft.com/appx/manifest/uap/windows10/5"
   xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
   xmlns:desktop6="http://schemas.microsoft.com/appx/manifest/desktop/windows10/6"
-  IgnorableNamespaces="uap rescap desktop desktop6">
+  IgnorableNamespaces="uap uap5 rescap desktop desktop6">
 
   <Identity
     Name="16d8fb9e-dfee-4bd6-9bc2-f6b775863920"
@@ -79,6 +80,34 @@
               StartAccount="localSystem" />
         </desktop6:Extension>
 
+      </Extensions>
+    </Application>
+
+    <!--
+      Hidden full-trust entry for the WPF tray app. The Windows service launches this via its
+      AppExecutionAlias so WPF starts WITH package identity (required for the app-service / IPC)
+      and shows only its tray icon - without bringing up the UWP UI.
+      AppListEntry="none" keeps it out of the Start menu.
+    -->
+    <Application Id="TrayApp"
+      Executable="WPF\WPF.exe"
+      EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements
+        DisplayName="DesktopBridge Tray"
+        Description="DesktopBridge tray launcher"
+        BackgroundColor="transparent"
+        Square150x150Logo="Images\Square150x150Logo.png"
+        Square44x44Logo="Images\Square44x44Logo.png"
+        AppListEntry="none">
+        <uap:DefaultTile Wide310x150Logo="Images\Wide310x150Logo.png" />
+        <uap:SplashScreen Image="Images\SplashScreen.png" />
+      </uap:VisualElements>
+      <Extensions>
+        <uap5:Extension Category="windows.appExecutionAlias">
+          <uap5:AppExecutionAlias>
+            <uap5:ExecutionAlias Alias="DesktopBridgeTray.exe" />
+          </uap5:AppExecutionAlias>
+        </uap5:Extension>
       </Extensions>
     </Application>
   </Applications>

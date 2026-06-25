@@ -110,24 +110,29 @@ namespace DesktopBridge
         }
 
         /// <summary>
-        /// Handle calculation request from desktop process
-        /// (dummy scenario to show that connection is bi-directional)
+        /// Mirrors a calculation request from the desktop process in the UI.
+        /// The response itself is sent by the single responder in App.Connection_RequestReceived;
+        /// sending a second response here would throw and tear down the connection.
         /// </summary>
         private async void AppServiceConnection_RequestReceived(AppServiceConnection sender, AppServiceRequestReceivedEventArgs args)
         {
-            LogManager.Instance.WriteLogs(" On Request Recieved ");
-            double d1 = (double)args.Request.Message["D1"];
-            double d2 = (double)args.Request.Message["D2"];
-            double result = d1 + d2;
+            LogManager.Instance.WriteLogs("Request received (UI mirror).");
 
-            ValueSet response = new ValueSet();
-            response.Add("RESULT", result);
-            await args.Request.SendResponseAsync(response);
+            object v1, v2;
+            if (!args.Request.Message.TryGetValue("D1", out v1) ||
+                !args.Request.Message.TryGetValue("D2", out v2) ||
+                !(v1 is double) || !(v2 is double))
+            {
+                return;
+            }
+
+            double d1 = (double)v1;
+            double d2 = (double)v2;
 
             // log the request in the UI for demo purposes
             await this.Dispatcher.RunAsync(CoreDispatcherPriority.Normal, () =>
             {
-                tbRequests.Text += string.Format("Request: {0} + {1} --> Response = {2}\r\n", d1, d2, result);
+                tbRequests.Text += string.Format("Request: {0} + {1} --> Response = {2}\r\n", d1, d2, d1 + d2);
             });
         }
     }

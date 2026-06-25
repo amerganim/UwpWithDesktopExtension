@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Windows;
+using System.Windows.Interop;
 
 namespace WPF
 {
@@ -11,6 +12,7 @@ namespace WPF
     public partial class App : System.Windows.Application
     {
         private static readonly Mutex InstanceMutex = new(true, "WPF_SINGLE_INSTANCE");
+        private bool _shuttingDown;
 
         public App()
         {
@@ -26,26 +28,39 @@ namespace WPF
                 if (lastArg.Contains("parameter"))
                 {
                     User32API.SendMessage(User32API.HWND_BROADCAST, User32API.WM_SHOWNOTI, IntPtr.Zero, IntPtr.Zero);
+                    _shuttingDown = true;
                     Shutdown();
                     return;
                 }
             }
 
-            // Single-instance guard: if another instance owns the mutex, ask it to
-            // surface its window and exit this one.
+            // Single-instance guard: if another instance owns the mutex, ask it to surface its
+            // window (this is how launching the UWP app brings up the WPF window) and exit.
             if (!InstanceMutex.WaitOne(TimeSpan.Zero, true))
             {
                 LogManager.Instance.WriteLogs("Another instance is already running; signaling WM_SHOWME.");
                 User32API.SendMessage(User32API.HWND_BROADCAST, User32API.WM_SHOWME, IntPtr.Zero, IntPtr.Zero);
+                _shuttingDown = true;
                 Shutdown();
             }
         }
 
         private void Application_Startup(object sender, StartupEventArgs e)
         {
-            // MainWindow creates the tray icon and opens the app-service (IPC) connection.
+            if (_shuttingDown)
+            {
+                return;
+            }
+
+            // The app lives in the tray, so it must not exit just because no window is visible.
+            ShutdownMode = ShutdownMode.OnExplicitShutdown;
+
+            // Tray-only startup: MainWindow creates the tray icon and opens the app-service (IPC)
+            // connection, but we do NOT show the window. We only realize its native handle so it can
+            // receive the WM_SHOWME broadcast (sent when the user launches the UWP app). The window
+            // is shown on demand from the tray menu or WM_SHOWME.
             MainWindow = new MainWindow();
-            MainWindow.Show();
+            new WindowInteropHelper(MainWindow).EnsureHandle();
         }
     }
 }

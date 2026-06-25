@@ -1,28 +1,23 @@
 using System.ComponentModel;
 using System.Runtime.InteropServices;
-using System.Text;
 using static TrayLauncherService.NativeMethods;
 
 namespace TrayLauncherService
 {
     /// <summary>
-    /// Launches the packaged app in the interactive user session so the WPF tray app
-    /// (and its app-service / IPC connection to the UWP app) starts with full package identity.
+    /// Launches the WPF tray app in the interactive user session WITH package identity, by running
+    /// its AppExecutionAlias. Package identity is required for the app-service / IPC connection to
+    /// the UWP app, and launching the alias (rather than the UWP app itself) brings up only the WPF
+    /// tray icon - not the UWP UI.
     ///
-    /// A LocalSystem service runs in session 0 and cannot show UI, and a process it starts
-    /// directly has no package identity. To preserve identity we activate the packaged app's
-    /// AUMID via Explorer's "shell:AppsFolder" path inside the target user session. The UWP app
-    /// then launches the WPF full-trust process through FullTrustProcessLauncher, which shows the
-    /// tray icon and connects the app service.
+    /// A LocalSystem service runs in session 0, so it duplicates the active user's token and uses
+    /// CreateProcessAsUser to start the alias on that user's desktop.
     /// </summary>
     internal static class SessionLauncher
     {
-        // AppId declared for the packaged Application entry in Package.appxmanifest.
-        private const string PackageAppId = "App";
+        // Must match the Alias declared in WAPP/Package.appxmanifest (TrayApp AppExecutionAlias).
+        private const string AliasExeName = "DesktopBridgeTray.exe";
 
-        /// <summary>
-        /// Activates the packaged app in the currently active console session, if any.
-        /// </summary>
         public static void LaunchInActiveSession()
         {
             uint sessionId = WTSGetActiveConsoleSessionId();
@@ -35,19 +30,8 @@ namespace TrayLauncherService
             LaunchInSession(sessionId);
         }
 
-        /// <summary>
-        /// Activates the packaged app in the given session.
-        /// </summary>
         public static void LaunchInSession(uint sessionId)
         {
-            string? aumid = ResolveAumid();
-            if (string.IsNullOrEmpty(aumid))
-            {
-                ServiceLog.Write("Could not resolve the package AUMID; aborting launch. " +
-                    "Set the TRAYLAUNCHER_AUMID environment variable or run the service with package identity.");
-                return;
-            }
-
             IntPtr userToken = IntPtr.Zero;
             IntPtr primaryToken = IntPtr.Zero;
             IntPtr environmentBlock = IntPtr.Zero;
@@ -57,7 +41,7 @@ namespace TrayLauncherService
             {
                 if (!WTSQueryUserToken(sessionId, out userToken))
                 {
-                    ServiceLog.Write($"WTSQueryUserToken failed for session {sessionId}: {new Win32Exception(Marshal.GetLastWin32Error()).Message}");
+                    ServiceLog.Write($"WTSQueryUserToken failed for session {sessionId}: {LastError()}");
                     return;
                 }
 
@@ -69,21 +53,23 @@ namespace TrayLauncherService
                         TOKEN_TYPE.TokenPrimary,
                         out primaryToken))
                 {
-                    ServiceLog.Write($"DuplicateTokenEx failed: {new Win32Exception(Marshal.GetLastWin32Error()).Message}");
+                    ServiceLog.Write($"DuplicateTokenEx failed: {LastError()}");
+                    return;
+                }
+
+                string? aliasPath = ResolveAliasPath(primaryToken);
+                if (aliasPath is null || !File.Exists(aliasPath))
+                {
+                    ServiceLog.Write($"Tray app alias not found (resolved: '{aliasPath ?? "<null>"}'). " +
+                        "Ensure the package is installed for the logged-on user.");
                     return;
                 }
 
                 if (!CreateEnvironmentBlock(out environmentBlock, primaryToken, false))
                 {
-                    // Non-fatal: continue without a custom environment block.
                     environmentBlock = IntPtr.Zero;
                     ServiceLog.Write("CreateEnvironmentBlock failed; continuing without it.");
                 }
-
-                string explorer = Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.Windows),
-                    "explorer.exe");
-                string commandLine = $"\"{explorer}\" shell:AppsFolder\\{aumid}";
 
                 var startupInfo = new STARTUPINFO
                 {
@@ -93,8 +79,8 @@ namespace TrayLauncherService
 
                 bool created = CreateProcessAsUser(
                     primaryToken,
+                    aliasPath,
                     null,
-                    commandLine,
                     IntPtr.Zero,
                     IntPtr.Zero,
                     false,
@@ -106,11 +92,11 @@ namespace TrayLauncherService
 
                 if (created)
                 {
-                    ServiceLog.Write($"Activated packaged app '{aumid}' in session {sessionId}.");
+                    ServiceLog.Write($"Launched tray app '{aliasPath}' in session {sessionId}.");
                 }
                 else
                 {
-                    ServiceLog.Write($"CreateProcessAsUser failed: {new Win32Exception(Marshal.GetLastWin32Error()).Message}");
+                    ServiceLog.Write($"CreateProcessAsUser failed: {LastError()}");
                 }
             }
             catch (Exception ex)
@@ -128,33 +114,49 @@ namespace TrayLauncherService
         }
 
         /// <summary>
-        /// Resolves the packaged app's Application User Model ID. Prefers the service's own
-        /// package identity; falls back to the TRAYLAUNCHER_AUMID environment variable for
-        /// non-packaged (manual) testing.
+        /// Resolves the full path to the per-user AppExecutionAlias:
+        /// %LOCALAPPDATA%\Microsoft\WindowsApps\&lt;alias&gt;. The TRAYLAUNCHER_ALIAS environment
+        /// variable can override it (full path or bare exe name) for manual testing.
         /// </summary>
-        private static string? ResolveAumid()
+        private static string? ResolveAliasPath(IntPtr userToken)
         {
-            uint length = 0;
-            int rc = GetCurrentApplicationUserModelId(ref length, null);
-
-            // ERROR_INSUFFICIENT_BUFFER (122) means we have identity; size buffer and retry.
-            if (rc == 122 && length > 0)
+            string? overridePath = Environment.GetEnvironmentVariable("TRAYLAUNCHER_ALIAS");
+            if (!string.IsNullOrWhiteSpace(overridePath))
             {
-                var builder = new StringBuilder((int)length);
-                if (GetCurrentApplicationUserModelId(ref length, builder) == ERROR_SUCCESS)
-                {
-                    return builder.ToString();
-                }
+                return Path.IsPathRooted(overridePath) ? overridePath : ExpandAliasInUserApps(userToken, overridePath);
             }
 
-            string? overrideAumid = Environment.GetEnvironmentVariable("TRAYLAUNCHER_AUMID");
-            if (!string.IsNullOrWhiteSpace(overrideAumid))
-            {
-                // Allow either a full AUMID or just the package family name (AppId appended).
-                return overrideAumid.Contains('!') ? overrideAumid : $"{overrideAumid}!{PackageAppId}";
-            }
-
-            return null;
+            return ExpandAliasInUserApps(userToken, AliasExeName);
         }
+
+        private static string? ExpandAliasInUserApps(IntPtr userToken, string exeName)
+        {
+            string? localAppData = GetKnownFolderPath(FOLDERID_LocalAppData, userToken);
+            if (localAppData is null)
+            {
+                return null;
+            }
+
+            return Path.Combine(localAppData, "Microsoft", "WindowsApps", exeName);
+        }
+
+        private static string? GetKnownFolderPath(Guid folderId, IntPtr userToken)
+        {
+            IntPtr pathPtr = IntPtr.Zero;
+            try
+            {
+                if (SHGetKnownFolderPath(folderId, 0, userToken, out pathPtr) != 0)
+                {
+                    return null;
+                }
+                return Marshal.PtrToStringUni(pathPtr);
+            }
+            finally
+            {
+                if (pathPtr != IntPtr.Zero) CoTaskMemFree(pathPtr);
+            }
+        }
+
+        private static string LastError() => new Win32Exception(Marshal.GetLastWin32Error()).Message;
     }
 }
