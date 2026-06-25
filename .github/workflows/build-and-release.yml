@@ -1,0 +1,137 @@
+name: Build and Release MSIX
+
+# Builds the WPF + Windows service with the .NET SDK on every push/PR, and builds the
+# full signed MSIX package (UWP + WAP packaging project, which need the Visual Studio
+# workloads available on the GitHub-hosted Windows runner). Pushing a tag like "v1.0.0"
+# publishes a GitHub Release with the installable package attached.
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  SOLUTION: DesktopBridge/DesktopBridge.sln
+  WAPPROJ: DesktopBridge/WAPP/WAPP.wapproj
+  CONFIGURATION: Release
+  PLATFORM: x64
+  # Password for the throwaway self-signed certificate generated in CI to sign the sideload package.
+  PFX_PASSWORD: CIpassword123!
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Setup NuGet
+        uses: nuget/setup-nuget@v2
+
+      # Sanity check: the two projects that build with the plain .NET SDK.
+      - name: Build WPF and Windows service (.NET SDK)
+        shell: pwsh
+        run: |
+          dotnet build DesktopBridge/WPF/WPF.csproj -c $env:CONFIGURATION
+          dotnet build DesktopBridge/TrayLauncherService/TrayLauncherService.csproj -c $env:CONFIGURATION
+
+      - name: Generate self-signed signing certificate
+        id: cert
+        shell: pwsh
+        run: |
+          # The certificate subject MUST match the Publisher in WAPP/Package.appxmanifest (CN=User).
+          $securePwd = ConvertTo-SecureString -String $env:PFX_PASSWORD -Force -AsPlainText
+          $cert = New-SelfSignedCertificate `
+            -Type Custom `
+            -Subject 'CN=User' `
+            -KeyUsage DigitalSignature `
+            -FriendlyName 'DesktopBridge CI signing' `
+            -CertStoreLocation 'Cert:\CurrentUser\My' `
+            -TextExtension @('2.5.29.37={text}1.3.6.1.5.5.7.3.3', '2.5.29.19={text}')
+          $pfxPath = Join-Path $env:RUNNER_TEMP 'signing.pfx'
+          Export-PfxCertificate -Cert $cert -FilePath $pfxPath -Password $securePwd | Out-Null
+          "pfx=$pfxPath" >> $env:GITHUB_OUTPUT
+
+      - name: Restore solution
+        shell: pwsh
+        run: msbuild $env:SOLUTION /t:Restore /p:Configuration=$env:CONFIGURATION /p:Platform=$env:PLATFORM
+
+      - name: Build signed MSIX package
+        shell: pwsh
+        run: |
+          msbuild $env:WAPPROJ `
+            /p:Configuration=$env:CONFIGURATION `
+            /p:Platform=$env:PLATFORM `
+            /p:UapAppxPackageBuildMode=SideloadOnly `
+            /p:AppxBundle=Never `
+            /p:AppxPackageSigningEnabled=true `
+            /p:PackageCertificateKeyFile="${{ steps.cert.outputs.pfx }}" `
+            /p:PackageCertificatePassword=$env:PFX_PASSWORD
+
+      - name: Stage package output
+        id: stage
+        shell: pwsh
+        run: |
+          $appPackages = Join-Path $env:GITHUB_WORKSPACE 'DesktopBridge/WAPP/AppPackages'
+          if (-not (Test-Path $appPackages)) {
+            Write-Error "AppPackages folder not found at $appPackages"
+            exit 1
+          }
+          $msix = Get-ChildItem -Path $appPackages -Recurse -Include *.msix, *.msixbundle | Select-Object -First 1
+          if ($null -eq $msix) {
+            Write-Error "No .msix produced under $appPackages"
+            Get-ChildItem -Path $appPackages -Recurse | ForEach-Object { $_.FullName }
+            exit 1
+          }
+          Write-Host "Found package: $($msix.FullName)"
+          $zip = Join-Path $env:GITHUB_WORKSPACE 'DesktopBridge-MSIX.zip'
+          # Zip the whole sideload folder: it includes the .msix, the public .cer and the
+          # Add-AppDevPackage.ps1 install helper.
+          Compress-Archive -Path (Join-Path $msix.DirectoryName '*') -DestinationPath $zip -Force
+          "zip=$zip" >> $env:GITHUB_OUTPUT
+          "packagedir=$($msix.DirectoryName)" >> $env:GITHUB_OUTPUT
+
+      - name: Upload package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: DesktopBridge-MSIX
+          path: ${{ steps.stage.outputs.packagedir }}
+          if-no-files-found: error
+
+      - name: Publish GitHub Release (on tag)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ steps.stage.outputs.zip }}
+          generate_release_notes: true
+          body: |
+            ## Install
+
+            1. Download and extract **DesktopBridge-MSIX.zip**.
+            2. Right-click **Add-AppDevPackage.ps1** → **Run with PowerShell** (it elevates,
+               installs the bundled self-signed certificate to Trusted People/Root, then installs the app).
+            3. The **TrayLauncherService** Windows service is installed automatically (LocalSystem,
+               auto-start) and brings up the tray app in your session.
+
+            ### Prerequisites
+            - Windows 10 version 2004 (build 19041) or later.
+            - **.NET 8 Desktop Runtime (x64)** — https://dotnet.microsoft.com/download/dotnet/8.0
+              (the WPF app and the service are framework-dependent).
+
+            > The package is signed with a throwaway self-signed certificate generated during CI,
+            > intended for sideload testing only.

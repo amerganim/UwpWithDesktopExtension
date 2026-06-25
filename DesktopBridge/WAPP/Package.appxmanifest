@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
+  xmlns:desktop6="http://schemas.microsoft.com/appx/manifest/desktop/windows10/6"
+  IgnorableNamespaces="uap rescap desktop desktop6">
+
+  <Identity
+    Name="16d8fb9e-dfee-4bd6-9bc2-f6b775863920"
+    Publisher="CN=User"
+    Version="1.0.0.0" />
+
+  <Properties>
+    <DisplayName>WAPP</DisplayName>
+    <PublisherDisplayName>User</PublisherDisplayName>
+    <Logo>Images\StoreLogo.png</Logo>
+  </Properties>
+
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Universal" MinVersion="10.0.0.0" MaxVersionTested="10.0.0.0" />
+    <!-- Packaged Windows services require Windows 10, version 2004 (build 19041) or later. -->
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.19041.0" MaxVersionTested="10.0.19041.0" />
+  </Dependencies>
+
+  <Resources>
+    <Resource Language="x-generate"/>
+  </Resources>
+
+  <Applications>
+    <Application Id="App"
+      Executable="$targetnametoken$.exe"
+      EntryPoint="$targetentrypoint$">
+      <uap:VisualElements
+        DisplayName="WAPP"
+        Description="WAPP"
+        BackgroundColor="transparent"
+        Square150x150Logo="Images\Square150x150Logo.png"
+        Square44x44Logo="Images\Square44x44Logo.png">
+        <uap:DefaultTile Wide310x150Logo="Images\Wide310x150Logo.png" />
+        <uap:SplashScreen Image="Images\SplashScreen.png" />
+      </uap:VisualElements>
+
+      <Extensions>
+
+        <uap:Extension Category="windows.appService">
+          <uap:AppService Name="SampleInteropService" />
+        </uap:Extension>
+
+        <desktop:Extension
+            Category="windows.fullTrustProcess"
+            Executable="WPF\WPF.exe">
+          <desktop:FullTrustProcess>
+            <desktop:ParameterGroup GroupId="Background" Parameters="/background" />
+            <desktop:ParameterGroup GroupId="WPF" Parameters="/wpf" />
+            <desktop:ParameterGroup GroupId="WinForms" Parameters="/winforms" />
+            <desktop:ParameterGroup GroupId="Win32" Parameters="/win32" />
+            <desktop:ParameterGroup GroupId="RemoteDesktop" Parameters="/mstsc" />
+            <desktop:ParameterGroup GroupId="Parameters" Parameters="parameters" />
+          </desktop:FullTrustProcess>
+        </desktop:Extension>
+
+      </Extensions>
+    </Application>
+  </Applications>
+
+  <!--
+    Package-level extension that installs a Windows service together with the package.
+    The service is registered on install and removed on uninstall.
+      - StartupType="auto"        : starts automatically at boot.
+      - StartAccount="localSystem": runs with LocalSystem privileges in session 0.
+      - EntryPoint="Windows.FullTrustApplication": the executable is a full-trust Win32 app.
+  -->
+  <Extensions>
+    <desktop6:Extension
+        Category="windows.service"
+        Executable="TrayLauncherService\TrayLauncherService.exe"
+        EntryPoint="Windows.FullTrustApplication">
+      <desktop6:Service
+          Name="TrayLauncherService"
+          StartupType="auto"
+          StartAccount="localSystem" />
+    </desktop6:Extension>
+  </Extensions>
+
+  <Capabilities>
+    <Capability Name="internetClient" />
+    <rescap:Capability Name="runFullTrust" />
+    <!-- Required to install a Windows service from an MSIX package. -->
+    <rescap:Capability Name="packagedServices" />
+  </Capabilities>
+</Package>
