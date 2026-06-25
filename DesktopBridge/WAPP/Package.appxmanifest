@@ -86,7 +86,7 @@
   <Capabilities>
     <Capability Name="internetClient" />
     <rescap:Capability Name="runFullTrust" />
-    <!-- Required to install a Windows service from an MSIX package. -->
-    <rescap:Capability Name="packagedServices" />
+    <!-- Required to install a packaged Windows service that runs as LocalSystem. -->
+    <rescap:Capability Name="localSystemServices" />
   </Capabilities>
 </Package>

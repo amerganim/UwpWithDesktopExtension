@@ -50,7 +50,7 @@ In [`WAPP/Package.appxmanifest`](WAPP/Package.appxmanifest):
     <desktop6:Service Name="TrayLauncherService" StartupType="auto" StartAccount="localSystem" />
   </desktop6:Extension>
   ```
-- `<rescap:Capability Name="packagedServices" />` (required to install a service from MSIX).
+- `<rescap:Capability Name="localSystemServices" />` (required to install a packaged service that runs as LocalSystem).
 - `<rescap:Capability Name="runFullTrust" />` (existing, for the WPF full-trust process).
 - `Windows.Desktop` min version raised to **10.0.19041** (packaged services need Windows 10 2004+).
 
