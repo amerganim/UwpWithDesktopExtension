@@ -12,6 +12,10 @@ namespace TrayLauncherService
         public const int MAXIMUM_ALLOWED = 0x02000000;
         public const uint CREATE_UNICODE_ENVIRONMENT = 0x00000400;
         public const uint NORMAL_PRIORITY_CLASS = 0x00000020;
+
+        // STARTUPINFO.dwFlags: turn OFF the "app starting" (spinning ring) feedback cursor for a
+        // windowless tray launch.
+        public const uint STARTF_FORCEOFFFEEDBACK = 0x00000080;
         public const int ERROR_SUCCESS = 0;
         public const int APPMODEL_ERROR_NO_PACKAGE = 15700;
 

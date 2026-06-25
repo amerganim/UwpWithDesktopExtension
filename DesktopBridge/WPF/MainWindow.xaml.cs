@@ -137,7 +137,8 @@ namespace WPF
         }
 
         /// <summary>
-        /// Handles a request from the UWP app to read a registry key.
+        /// Handles requests from the UWP app: "SHOWNOTI" shows the notification window;
+        /// otherwise a "KEY" registry read is performed.
         /// </summary>
         private async void Connection_RequestReceived(AppServiceConnection sender, AppServiceRequestReceivedEventArgs args)
         {
@@ -145,7 +146,17 @@ namespace WPF
             try
             {
                 var response = new ValueSet();
-                string? key = args.Request.Message["KEY"] as string;
+
+                // Notification request over IPC (no extra process launch needed).
+                if (args.Request.Message.TryGetValue("CMD", out object? cmd) && (cmd as string) == "SHOWNOTI")
+                {
+                    await Dispatcher.InvokeAsync(() => new NotificationWindow().Show());
+                    response.Add("STATUS", "OK");
+                    await args.Request.SendResponseAsync(response);
+                    return;
+                }
+
+                string? key = args.Request.Message.TryGetValue("KEY", out object? keyObj) ? keyObj as string : null;
                 int index = key?.IndexOf('\\') ?? -1;
 
                 if (key is null || index <= 0)

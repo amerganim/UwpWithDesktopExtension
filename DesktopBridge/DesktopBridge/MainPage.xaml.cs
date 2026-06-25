@@ -17,6 +17,8 @@ namespace DesktopBridge
     /// </summary>
     public sealed partial class MainPage : Page
     {
+        private bool _connectionAttached;
+
         public MainPage()
         {
             this.InitializeComponent();
@@ -38,31 +40,41 @@ namespace DesktopBridge
 
             }
 
+            // The tray app usually connects before this page exists, so the AppServiceConnected
+            // event has already fired and was missed. Wire up the existing connection now so
+            // Scenario 2 (incoming requests) is shown.
             if (App.Connection != null)
             {
-                await Dispatcher.RunAsync(CoreDispatcherPriority.Normal, () =>
-                {
-                    // enable UI to access  the connection
-                    btnRegKey.IsEnabled = true;
-                });
+                AttachConnection(App.Connection);
             }
         }
 
-        private async void MainPage_AppServiceConnected(object sender, AppServiceTriggerDetails e)
+        private void MainPage_AppServiceConnected(object sender, AppServiceTriggerDetails e)
         {
-
             LogManager.Instance.WriteLogs("App Service Connected");
-            //App.Connection.RequestReceived += AppServiceConnection_RequestReceived;
-
-            if (e is null)
+            if (e?.AppServiceConnection != null)
             {
-                LogManager.Instance.WriteLogs(" Argument Connection Is NULL");
+                AttachConnection(e.AppServiceConnection);
             }
-            e.AppServiceConnection.RequestReceived += AppServiceConnection_RequestReceived;
+        }
+
+        /// <summary>
+        /// Subscribes the UI to the connection (idempotent) and enables the controls.
+        /// </summary>
+        private async void AttachConnection(AppServiceConnection connection)
+        {
+            if (_connectionAttached)
+            {
+                return;
+            }
+            _connectionAttached = true;
+
+            // App.Connection_RequestReceived is the single responder; this handler only mirrors
+            // incoming requests into Scenario 2's text box.
+            connection.RequestReceived += AppServiceConnection_RequestReceived;
 
             await Dispatcher.RunAsync(CoreDispatcherPriority.Normal, () =>
             {
-                // enable UI to access  the connection
                 btnRegKey.IsEnabled = true;
             });
         }
@@ -74,12 +86,11 @@ namespace DesktopBridge
         {
 
             LogManager.Instance.WriteLogs($"ON UWP Disconnected ");
+            _connectionAttached = false;
             await Dispatcher.RunAsync(CoreDispatcherPriority.Normal, () =>
             {
                 // disable UI to access the connection
                 btnRegKey.IsEnabled = false;
-
-
             });
         }
 
@@ -105,8 +116,12 @@ namespace DesktopBridge
                 tbResult.Text += key + " = " + response.Message[key] + "\r\n";
             }
 
-            // Show a Custom Notification in WPF
-            await FullTrustProcessLauncher.LaunchFullTrustProcessForCurrentAppAsync("Parameters");
+            // Ask the (already running) WPF tray app to show a custom notification over the
+            // existing IPC connection - no need to launch another process (which flashed the
+            // "app starting" cursor).
+            ValueSet notify = new ValueSet();
+            notify.Add("CMD", "SHOWNOTI");
+            await App.Connection.SendMessageAsync(notify);
         }
 
         /// <summary>

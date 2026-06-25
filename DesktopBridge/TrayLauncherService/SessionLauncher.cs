@@ -75,6 +75,8 @@ namespace TrayLauncherService
                 {
                     cb = Marshal.SizeOf<STARTUPINFO>(),
                     lpDesktop = @"winsta0\default",
+                    // Suppress the "app starting" spinning-ring cursor for the windowless tray launch.
+                    dwFlags = STARTF_FORCEOFFFEEDBACK,
                 };
 
                 bool created = CreateProcessAsUser(
