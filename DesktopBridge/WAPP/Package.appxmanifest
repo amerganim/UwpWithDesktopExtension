@@ -62,28 +62,26 @@
           </desktop:FullTrustProcess>
         </desktop:Extension>
 
+        <!--
+          Installs a Windows service together with the package (registered on install,
+          removed on uninstall).
+            - StartupType="auto"        : starts automatically at boot.
+            - StartAccount="localSystem": runs with LocalSystem privileges in session 0.
+            - EntryPoint="Windows.FullTrustApplication": the executable is a full-trust Win32 app.
+        -->
+        <desktop6:Extension
+            Category="windows.service"
+            Executable="TrayLauncherService\TrayLauncherService.exe"
+            EntryPoint="Windows.FullTrustApplication">
+          <desktop6:Service
+              Name="TrayLauncherService"
+              StartupType="auto"
+              StartAccount="localSystem" />
+        </desktop6:Extension>
+
       </Extensions>
     </Application>
   </Applications>
-
-  <!--
-    Package-level extension that installs a Windows service together with the package.
-    The service is registered on install and removed on uninstall.
-      - StartupType="auto"        : starts automatically at boot.
-      - StartAccount="localSystem": runs with LocalSystem privileges in session 0.
-      - EntryPoint="Windows.FullTrustApplication": the executable is a full-trust Win32 app.
-  -->
-  <Extensions>
-    <desktop6:Extension
-        Category="windows.service"
-        Executable="TrayLauncherService\TrayLauncherService.exe"
-        EntryPoint="Windows.FullTrustApplication">
-      <desktop6:Service
-          Name="TrayLauncherService"
-          StartupType="auto"
-          StartAccount="localSystem" />
-    </desktop6:Extension>
-  </Extensions>
 
   <Capabilities>
     <Capability Name="internetClient" />

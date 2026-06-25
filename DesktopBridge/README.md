@@ -41,7 +41,8 @@ The service resolves the package AUMID from its own package identity
 In [`WAPP/Package.appxmanifest`](WAPP/Package.appxmanifest):
 
 - `xmlns:desktop6="http://schemas.microsoft.com/appx/manifest/desktop/windows10/6"` namespace.
-- A **package-level** `<Extensions>` with:
+- A `windows.service` extension under the **`<Application>`** `<Extensions>` (the packaging
+  validator requires it there, not at package level):
   ```xml
   <desktop6:Extension Category="windows.service"
       Executable="TrayLauncherService\TrayLauncherService.exe"
