@@ -81,7 +81,30 @@ jobs:
             /p:AppxBundle=Never `
             /p:AppxPackageSigningEnabled=true `
             /p:PackageCertificateKeyFile="${{ steps.cert.outputs.pfx }}" `
-            /p:PackageCertificatePassword=$env:PFX_PASSWORD
+            /p:PackageCertificatePassword=$env:PFX_PASSWORD `
+            /bl:"$env:GITHUB_WORKSPACE/msbuild.binlog" `
+            "/flp:logfile=$env:GITHUB_WORKSPACE/msbuild.log;verbosity=normal" `
+            "/flp1:logfile=$env:GITHUB_WORKSPACE/msbuild-errors.log;errorsonly"
+
+      - name: Show MSBuild errors
+        if: failure()
+        shell: pwsh
+        run: |
+          if (Test-Path "$env:GITHUB_WORKSPACE/msbuild-errors.log") {
+            Write-Host '===== MSBuild errors ====='
+            Get-Content "$env:GITHUB_WORKSPACE/msbuild-errors.log"
+          }
+
+      - name: Upload build logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: msbuild-logs
+          path: |
+            ${{ github.workspace }}/msbuild.log
+            ${{ github.workspace }}/msbuild-errors.log
+            ${{ github.workspace }}/msbuild.binlog
+          if-no-files-found: warn
 
       - name: Stage package output
         id: stage
