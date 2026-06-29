@@ -121,8 +121,9 @@ jobs:
             exit 1
           }
           Write-Host "Found package: $($msix.FullName)"
-          # Include our installer that also starts the tray helper right after install.
-          Copy-Item (Join-Path $env:GITHUB_WORKSPACE 'build/Install.ps1') -Destination $msix.DirectoryName -Force
+          # Include our installer (starts the tray + registers logon autostart) and uninstaller.
+          Copy-Item (Join-Path $env:GITHUB_WORKSPACE 'build/Install.ps1')   -Destination $msix.DirectoryName -Force
+          Copy-Item (Join-Path $env:GITHUB_WORKSPACE 'build/Uninstall.ps1') -Destination $msix.DirectoryName -Force
           $zip = Join-Path $env:GITHUB_WORKSPACE 'DesktopBridge-MSIX.zip'
           # Zip the whole sideload folder: it includes the .msix, the public .cer, the generated
           # Add-AppDevPackage.ps1, and our Install.ps1 (install + start tray immediately).

@@ -15,12 +15,20 @@ UWP app + full-trust WPF extension (IPC) + a native C++ system-tray helper.
 
 ## Behavior
 
-- **At logon:** the package's `windows.startupTask` launches `TrayHelper.exe` (with package
-  identity). Only the **tray icon** appears — no window, no UWP UI.
-- **Right after install:** a startup task only fires at the *next* sign-in, so the bundled
-  `Install.ps1` installs the package and then starts the helper immediately (via its
-  `AppExecutionAlias`, `DesktopBridgeTray.exe`) so the tray appears without a reboot or opening the
-  main app. (Plain `Add-AppDevPackage.ps1` installs only; the tray then waits for next sign-in.)
+- **Autostart:** a packaged `windows.startupTask` is **blocked by Windows until the app is launched
+  once** (by design — see the note below). To make the tray appear after a fresh install with *no*
+  main-app launch, the bundled **`Install.ps1`** (a) starts the helper immediately and (b) registers
+  a per-user **logon Run entry** pointing at the helper's `AppExecutionAlias`
+  (`DesktopBridgeTray.exe`) — a classic autostart that is *not* subject to the startup-task gate.
+  So the tray shows right after install and on every sign-in without ever opening the main app.
+- The manifest's `windows.startupTask` is kept too (the proper, uninstall-managed mechanism that
+  works once the app has been launched). The helper is single-instance, so the two autostart paths
+  never produce two icons.
+
+> **Microsoft Store note:** Store distribution can't run an install script, and the startup-task
+> "must be launched once / user-enabled" gate applies. So on the Store the tray appears only after
+> the user first opens the app (or enables it under Settings → Startup apps). The no-launch
+> behavior above is a **sideload** capability.
 - **Open (tray):** `TrayHelper` activates the UWP app via `shell:AppsFolder\<PFN>!App`. The UWP app
   calls `FullTrustProcessLauncher`, which starts **WPF**; WPF opens the `AppServiceConnection`, so
   **UWP ↔ WPF IPC works**, and its window is shown.

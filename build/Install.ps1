@@ -1,12 +1,15 @@
 #Requires -Version 5
 <#
-    Installs the DesktopBridge package and immediately starts the system-tray helper, so the tray
-    icon appears right away - without waiting for the next sign-in and without opening the main app.
+    Installs the DesktopBridge package, starts the system-tray helper immediately, and registers a
+    per-user logon autostart so the tray appears after install AND on every later sign-in -
+    WITHOUT ever launching the main app.
+
+    Why a Run-key instead of just the manifest's windows.startupTask: a packaged startup task is
+    blocked by Windows until the app has been launched at least once (by design). A classic per-user
+    Run entry is not subject to that gate, so it works on a fresh install with no app launch.
 
     Run this instead of Add-AppDevPackage.ps1:
         Right-click -> Run with PowerShell   (it elevates as needed)
-
-    Afterwards the package's startup task starts the tray automatically on every later sign-in.
 #>
 
 $ErrorActionPreference = 'Stop'
@@ -14,6 +17,9 @@ $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 
 # Identity Name from Package.appxmanifest.
 $identityName = '16d8fb9e-dfee-4bd6-9bc2-f6b775863920'
+# Must match the TrayHelper AppExecutionAlias in the manifest.
+$aliasPath = Join-Path $env:LOCALAPPDATA 'Microsoft\WindowsApps\DesktopBridgeTray.exe'
+$runName   = 'DesktopBridgeTrayHelper'
 
 # 1) Install certificate + dependencies + app via the package's generated installer.
 $generated = Join-Path $here 'Add-AppDevPackage.ps1'
@@ -29,16 +35,21 @@ for ($i = 0; $i -lt 90; $i++) {
     if ($pkg) { break }
     Start-Sleep -Seconds 1
 }
+if (-not $pkg) {
+    Write-Warning 'Package not detected after install; skipping autostart registration.'
+    return
+}
 
-# 3) Launch the tray helper now (via its AppExecutionAlias) so the icon shows immediately.
-if ($pkg) {
-    try {
-        Start-Process 'DesktopBridgeTray.exe'
-        Write-Host 'DesktopBridge installed; tray helper started.'
-    } catch {
-        Write-Warning "Installed, but could not start the tray helper now: $($_.Exception.Message)"
-        Write-Warning 'It will start automatically at your next sign-in.'
-    }
-} else {
-    Write-Warning 'Package not detected after install; the tray will appear at your next sign-in.'
+# 3) Register a per-user logon autostart for the tray helper (not gated by the startup task rule).
+$runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+New-ItemProperty -Path $runKey -Name $runName -Value "`"$aliasPath`"" -PropertyType String -Force | Out-Null
+Write-Host "Registered logon autostart: $runName -> $aliasPath"
+
+# 4) Start the tray helper now so the icon appears immediately.
+try {
+    if (Test-Path $aliasPath) { Start-Process $aliasPath } else { Start-Process 'DesktopBridgeTray.exe' }
+    Write-Host 'DesktopBridge installed; tray helper started.'
+} catch {
+    Write-Warning "Installed, but could not start the tray helper now: $($_.Exception.Message)"
+    Write-Warning 'It will start at your next sign-in.'
 }
