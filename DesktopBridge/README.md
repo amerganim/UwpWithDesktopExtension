@@ -17,6 +17,10 @@ UWP app + full-trust WPF extension (IPC) + a native C++ system-tray helper.
 
 - **At logon:** the package's `windows.startupTask` launches `TrayHelper.exe` (with package
   identity). Only the **tray icon** appears — no window, no UWP UI.
+- **Right after install:** a startup task only fires at the *next* sign-in, so the bundled
+  `Install.ps1` installs the package and then starts the helper immediately (via its
+  `AppExecutionAlias`, `DesktopBridgeTray.exe`) so the tray appears without a reboot or opening the
+  main app. (Plain `Add-AppDevPackage.ps1` installs only; the tray then waits for next sign-in.)
 - **Open (tray):** `TrayHelper` activates the UWP app via `shell:AppsFolder\<PFN>!App`. The UWP app
   calls `FullTrustProcessLauncher`, which starts **WPF**; WPF opens the `AppServiceConnection`, so
   **UWP ↔ WPF IPC works**, and its window is shown.

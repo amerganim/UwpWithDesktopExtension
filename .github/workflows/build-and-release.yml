@@ -121,9 +121,11 @@ jobs:
             exit 1
           }
           Write-Host "Found package: $($msix.FullName)"
+          # Include our installer that also starts the tray helper right after install.
+          Copy-Item (Join-Path $env:GITHUB_WORKSPACE 'build/Install.ps1') -Destination $msix.DirectoryName -Force
           $zip = Join-Path $env:GITHUB_WORKSPACE 'DesktopBridge-MSIX.zip'
-          # Zip the whole sideload folder: it includes the .msix, the public .cer and the
-          # Add-AppDevPackage.ps1 install helper.
+          # Zip the whole sideload folder: it includes the .msix, the public .cer, the generated
+          # Add-AppDevPackage.ps1, and our Install.ps1 (install + start tray immediately).
           Compress-Archive -Path (Join-Path $msix.DirectoryName '*') -DestinationPath $zip -Force
           "zip=$zip" >> $env:GITHUB_OUTPUT
           "packagedir=$($msix.DirectoryName)" >> $env:GITHUB_OUTPUT
@@ -145,15 +147,17 @@ jobs:
             ## Install
 
             1. Download and extract **DesktopBridge-MSIX.zip**.
-            2. Right-click **Add-AppDevPackage.ps1** → **Run with PowerShell** (it elevates,
-               installs the bundled self-signed certificate to Trusted People/Root, then installs the app).
-            3. The **TrayLauncherService** Windows service is installed automatically (LocalSystem,
-               auto-start) and brings up the tray app in your session.
+            2. Right-click **Install.ps1** → **Run with PowerShell** (it elevates, installs the
+               bundled self-signed certificate + dependencies + app, then **starts the tray icon
+               immediately**). Or run **Add-AppDevPackage.ps1** to only install (the tray then
+               appears at your next sign-in).
+            3. The native tray helper's **startup task** is registered, so the tray icon also starts
+               automatically on every later sign-in. From the tray: **Open** / **Exit** the app.
 
             ### Prerequisites
-            - Windows 10 version 2004 (build 19041) or later.
+            - Windows 10 version 1809 (build 17763) or later.
             - **.NET 8 Desktop Runtime (x64)** — https://dotnet.microsoft.com/download/dotnet/8.0
-              (the WPF app and the service are framework-dependent).
+              (the WPF app is framework-dependent).
 
             > The package is signed with a throwaway self-signed certificate generated during CI,
             > intended for sideload testing only.

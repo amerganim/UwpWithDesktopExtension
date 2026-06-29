@@ -86,6 +86,13 @@
         <uap5:Extension Category="windows.startupTask">
           <uap5:StartupTask TaskId="DesktopBridgeTrayHelper" Enabled="true" DisplayName="DesktopBridge Tray" />
         </uap5:Extension>
+        <!-- Lets the install script (and manual testing) launch the helper by name, with identity,
+             so the tray can appear immediately after install instead of waiting for the next logon. -->
+        <uap5:Extension Category="windows.appExecutionAlias">
+          <uap5:AppExecutionAlias>
+            <uap5:ExecutionAlias Alias="DesktopBridgeTray.exe" />
+          </uap5:AppExecutionAlias>
+        </uap5:Extension>
       </Extensions>
     </Application>
   </Applications>
