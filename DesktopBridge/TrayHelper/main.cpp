@@ -12,7 +12,10 @@
 #include <shellapi.h>
 #include <appmodel.h>
 #include <tlhelp32.h>
+#include <shlobj.h>
 #include <string>
+#include <cstdlib>
+#include <cstdio>
 
 #include "resource.h"
 
@@ -35,6 +38,58 @@ namespace
     HICON g_icon           = nullptr;
     UINT  g_taskbarCreated = 0;
     std::wstring g_packageFamilyName;
+
+    // --- Diagnostics -------------------------------------------------------------------------
+    // Log to <LOCALAPPDATA>\Packages\<PFN>\LocalCache\TrayHelper.log when running with package
+    // identity (a stable, discoverable location), otherwise to %TEMP%\TrayHelper.log.
+    std::wstring LogPath()
+    {
+        std::wstring dir;
+        wchar_t* localAppData = nullptr;
+        size_t len = 0;
+        if (_wdupenv_s(&localAppData, &len, L"LOCALAPPDATA") == 0 && localAppData != nullptr)
+        {
+            dir = localAppData;
+            free(localAppData);
+        }
+        if (!dir.empty() && !g_packageFamilyName.empty())
+        {
+            dir += L"\\Packages\\" + g_packageFamilyName + L"\\LocalCache";
+        }
+        else
+        {
+            wchar_t temp[MAX_PATH] = {};
+            GetTempPathW(MAX_PATH, temp);
+            dir = temp;
+        }
+        return dir + L"\\TrayHelper.log";
+    }
+
+    void Log(const std::wstring& message)
+    {
+        HANDLE file = CreateFileW(LogPath().c_str(), FILE_APPEND_DATA,
+            FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (file == INVALID_HANDLE_VALUE)
+        {
+            return;
+        }
+        SYSTEMTIME st{};
+        GetLocalTime(&st);
+        wchar_t stamp[32] = {};
+        swprintf_s(stamp, L"%04d-%02d-%02d %02d:%02d:%02d ",
+            st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond);
+        const std::wstring line = stamp + message + L"\r\n";
+
+        int bytes = WideCharToMultiByte(CP_UTF8, 0, line.c_str(), -1, nullptr, 0, nullptr, nullptr);
+        if (bytes > 1)
+        {
+            std::string utf8(static_cast<size_t>(bytes - 1), '\0');
+            WideCharToMultiByte(CP_UTF8, 0, line.c_str(), -1, utf8.data(), bytes, nullptr, nullptr);
+            DWORD written = 0;
+            WriteFile(file, utf8.data(), static_cast<DWORD>(utf8.size()), &written, nullptr);
+        }
+        CloseHandle(file);
+    }
 
     std::wstring CurrentPackageFamilyName()
     {
@@ -89,7 +144,8 @@ namespace
         sei.lpVerb = L"open";
         sei.lpFile = target.c_str();
         sei.nShow  = SW_SHOWNORMAL;
-        ShellExecuteExW(&sei);
+        BOOL ok = ShellExecuteExW(&sei);
+        Log(L"OpenMainApp '" + target + (ok ? L"' ok." : L"' FAILED (gle=" + std::to_wstring(GetLastError()) + L")."));
     }
 
     // Terminate every process in our package family except this helper - i.e. the UWP app and
@@ -144,7 +200,9 @@ namespace
         g_nid.uCallbackMessage = WM_TRAYICON;
         g_nid.hIcon            = g_icon;
         wcscpy_s(g_nid.szTip, kTooltip);
-        Shell_NotifyIconW(NIM_ADD, &g_nid);
+        BOOL ok = Shell_NotifyIconW(NIM_ADD, &g_nid);
+        Log(ok ? L"Shell_NotifyIcon NIM_ADD succeeded."
+               : L"Shell_NotifyIcon NIM_ADD FAILED (gle=" + std::to_wstring(GetLastError()) + L").");
     }
 
     void ShowContextMenu()
@@ -223,6 +281,9 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE, LPWSTR, int)
     g_packageFamilyName = CurrentPackageFamilyName();
     g_taskbarCreated    = RegisterWindowMessageW(L"TaskbarCreated");
 
+    Log(L"TrayHelper starting. PackageFamilyName='" +
+        (g_packageFamilyName.empty() ? std::wstring(L"<none / no package identity>") : g_packageFamilyName) + L"'.");
+
     WNDCLASSEXW wc{};
     wc.cbSize        = sizeof(wc);
     wc.lpfnWndProc   = WndProc;
@@ -237,6 +298,7 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE, LPWSTR, int)
         0, 0, 0, 0, nullptr, nullptr, instance, nullptr);
     if (g_hwnd == nullptr)
     {
+        Log(L"CreateWindowEx FAILED (gle=" + std::to_wstring(GetLastError()) + L").");
         return 1;
     }
 
