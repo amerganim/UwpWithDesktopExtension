@@ -1,9 +1,6 @@
 using Microsoft.Win32;
-using System.ComponentModel;
-using System.IO;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Forms;
 using System.Windows.Interop;
 using System.Windows.Threading;
 using Windows.ApplicationModel;
@@ -14,37 +11,18 @@ namespace WPF
 {
     /// <summary>
     /// Interaction logic for MainWindow.xaml.
-    /// Owns the tray icon and the bidirectional app-service (IPC) connection to the UWP app.
+    /// Hosts the bidirectional app-service (IPC) connection to the UWP app and the demo UI.
+    /// The system tray icon is owned by the native TrayHelper, not this window.
     /// </summary>
     public partial class MainWindow : Window
     {
-        private NotifyIcon? _notifyIcon;
         private AppServiceConnection? _connection;
-        private bool _isExiting;
         private double d1, d2;
 
         public MainWindow()
         {
             InitializeComponent();
-            CreateTrayIcon();
             InitializeAppServiceConnection();
-        }
-
-        private void CreateTrayIcon()
-        {
-            var iconPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "myicon.ico");
-            _notifyIcon = new NotifyIcon
-            {
-                Icon = new System.Drawing.Icon(iconPath),
-                Visible = true,
-                Text = "DesktopBridge",
-            };
-            _notifyIcon.DoubleClick += (_, _) => RestoreWindow();
-
-            var contextMenu = new ContextMenuStrip();
-            contextMenu.Items.Add("Show", null, (_, _) => RestoreWindow());
-            contextMenu.Items.Add("Exit", null, (_, _) => ExitApplication());
-            _notifyIcon.ContextMenuStrip = contextMenu;
         }
 
         private void RestoreWindow()
@@ -52,34 +30,6 @@ namespace WPF
             Show();
             WindowState = WindowState.Normal;
             Activate();
-        }
-
-        private void ExitApplication()
-        {
-            _isExiting = true;
-            _notifyIcon?.Dispose();
-            _notifyIcon = null;
-            System.Windows.Application.Current.Shutdown();
-        }
-
-        protected override void OnStateChanged(EventArgs e)
-        {
-            if (WindowState == WindowState.Minimized)
-            {
-                Hide();
-            }
-            base.OnStateChanged(e);
-        }
-
-        protected override void OnClosing(CancelEventArgs e)
-        {
-            // Closing the window only hides it to the tray; real exit goes through ExitApplication().
-            if (!_isExiting)
-            {
-                e.Cancel = true;
-                Hide();
-            }
-            base.OnClosing(e);
         }
 
         protected override void OnSourceInitialized(EventArgs e)

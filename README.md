@@ -1,28 +1,28 @@
 # UwpWithDesktopExtension
 
-A UWP app with a full-trust desktop (WPF) extension, plus a **packaged Windows service**
-that auto-starts as **LocalSystem** and brings up the WPF tray app in the interactive user
-session so its tray icon shows and the UWP&nbsp;↔&nbsp;WPF IPC connection works.
+A UWP app with a full-trust desktop (WPF) extension for IPC, plus a **native C++ system-tray
+helper** that launches at logon via a per-user **startup task**. The tray icon lets the user open
+or exit the main UWP app; opening it establishes the UWP&nbsp;↔&nbsp;WPF IPC connection.
 
 The Visual Studio solution lives in [`DesktopBridge/`](DesktopBridge/). See
-[`DesktopBridge/README.md`](DesktopBridge/README.md) for architecture, build instructions, and how
-the packaged service is wired.
+[`DesktopBridge/README.md`](DesktopBridge/README.md) for architecture and build instructions.
 
 ## Projects
 
 | Project | Type | Role |
 | --- | --- | --- |
-| `DesktopBridge` | UWP (UAP) | Hosts the `SampleInteropService` app service; launches the full-trust process. |
-| `WPF` | .NET 8 WPF (full trust) | Tray icon + bidirectional app-service (IPC) client. |
-| `TrayLauncherService` | .NET 8 Windows service | LocalSystem, auto-start. Activates the packaged app in the user session. |
-| `WAPP` | MSIX packaging (`.wapproj`) | Bundles everything; declares the `windows.service` extension. |
+| `DesktopBridge` | UWP (UAP) | Hosts the `SampleInteropService` app service; launches the full-trust WPF process. |
+| `WPF` | .NET 8 WPF (full trust) | Bidirectional app-service (IPC) client + demo UI. No tray icon. |
+| `TrayHelper` | Native C++ Win32 | Owns the system tray icon (Open / Exit); launched at logon via a startup task. |
+| `WAPP` | MSIX packaging (`.wapproj`) | Bundles everything; declares the startup task. |
 
 ## Build at a glance
 
-- `WPF` and `TrayLauncherService` build with the **.NET 8 SDK** (`dotnet build`).
+- `WPF` builds with the **.NET 8 SDK** (`dotnet build`); `TrayHelper` builds with the **VC++ Build
+  Tools** (`msbuild TrayHelper/TrayHelper.vcxproj`).
 - `DesktopBridge` (UWP) and `WAPP` (MSIX packaging) require **Visual Studio** with the
-  *Universal Windows Platform development* and *MSIX Packaging Tools* workloads — they cannot be
-  built with the .NET SDK alone.
+  *Universal Windows Platform development*, *MSIX Packaging Tools*, and *Desktop development with
+  C++* workloads — they cannot be built with the .NET SDK alone.
 
 ## CI / Releases
 
@@ -39,5 +39,6 @@ signs the package with a throwaway self-signed certificate, and uploads it.
 
 1. Download **DesktopBridge-MSIX.zip** (from the Release or the Actions artifact) and extract it.
 2. Right-click **Add-AppDevPackage.ps1** → **Run with PowerShell** (installs the bundled certificate
-   and then the app). The `TrayLauncherService` (LocalSystem, auto-start) is installed with it.
-3. Prerequisites: Windows 10 2004+ and the **.NET 8 Desktop Runtime (x64)**.
+   and then the app). The tray helper's startup task is registered with it (tray icon appears at
+   next logon, or launch the app once).
+3. Prerequisites: Windows 10 1809+ and the **.NET 8 Desktop Runtime (x64)**.

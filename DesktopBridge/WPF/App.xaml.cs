@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.Windows;
-using System.Windows.Interop;
 
 namespace WPF
 {
@@ -52,15 +51,11 @@ namespace WPF
                 return;
             }
 
-            // The app lives in the tray, so it must not exit just because no window is visible.
-            ShutdownMode = ShutdownMode.OnExplicitShutdown;
-
-            // Tray-only startup: MainWindow creates the tray icon and opens the app-service (IPC)
-            // connection, but we do NOT show the window. We only realize its native handle so it can
-            // receive the WM_SHOWME broadcast (sent when the user launches the UWP app). The window
-            // is shown on demand from the tray menu or WM_SHOWME.
+            // WPF is launched on demand by the UWP app (FullTrustProcessLauncher) to provide the
+            // IPC connection and demo UI. The tray icon is owned by the native TrayHelper, so this
+            // window simply shows; closing it exits the process (default OnLastWindowClose).
             MainWindow = new MainWindow();
-            new WindowInteropHelper(MainWindow).EnsureHandle();
+            MainWindow.Show();
         }
     }
 }

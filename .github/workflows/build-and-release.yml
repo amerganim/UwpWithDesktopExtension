@@ -43,12 +43,11 @@ jobs:
       - name: Setup NuGet
         uses: nuget/setup-nuget@v2
 
-      # Sanity check: the two projects that build with the plain .NET SDK.
-      - name: Build WPF and Windows service (.NET SDK)
+      # Sanity check: WPF builds with the plain .NET SDK. The native TrayHelper (C++) and the
+      # UWP app are built by the packaging project below.
+      - name: Build WPF (.NET SDK)
         shell: pwsh
-        run: |
-          dotnet build DesktopBridge/WPF/WPF.csproj -c $env:CONFIGURATION
-          dotnet build DesktopBridge/TrayLauncherService/TrayLauncherService.csproj -c $env:CONFIGURATION
+        run: dotnet build DesktopBridge/WPF/WPF.csproj -c $env:CONFIGURATION
 
       - name: Generate self-signed signing certificate
         id: cert

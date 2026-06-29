@@ -1,114 +1,77 @@
 # DesktopBridge solution
 
-UWP app + full-trust WPF extension + a packaged LocalSystem Windows service.
+UWP app + full-trust WPF extension (IPC) + a native C++ system-tray helper.
 
 ## Projects
 
 - **DesktopBridge** — UWP app. Hosts the `SampleInteropService` app service and launches the
-  full-trust process via `FullTrustProcessLauncher`.
-- **WPF** — .NET 8 WPF full-trust process. Creates the tray icon and opens the bidirectional
-  `AppServiceConnection` back to the UWP app. Runs with package identity.
-- **TrayLauncherService** — .NET 8 Windows service. Installed by the package, runs as
-  **LocalSystem**, **auto-start**. On service start and on each user logon / unlock / console
-  connect it activates the packaged app in the interactive user session.
-- **WAPP** — MSIX packaging project (`.wapproj`). Bundles the three projects and declares the
-  Windows service via the `windows.service` manifest extension.
+  full-trust WPF process via `FullTrustProcessLauncher`.
+- **WPF** — .NET 8 full-trust process. Hosts the bidirectional `AppServiceConnection` (IPC) and the
+  demo UI (registry read / calc / notification). Runs with package identity. **No tray icon.**
+- **TrayHelper** — native **C++ Win32** app (`Shell_NotifyIcon`). Owns the **system tray icon**.
+  Launched at logon by a per-user **startup task**. Menu: **Open** (activate the UWP app) and
+  **Exit** (close the UWP app + its WPF process and remove the icon). ~2–5 MB footprint.
+- **WAPP** — MSIX packaging project (`.wapproj`). Bundles the three projects.
 
-## How the service brings up the tray + IPC
+## Behavior
 
-A LocalSystem service runs in **session 0** and cannot show UI, and any process it launches
-directly has **no MSIX package identity** — but `AppServiceConnection` requires package identity.
-To get identity **and** show only the tray (not the UWP UI), WPF is also declared as a hidden
-full-trust app entry (`Application Id="TrayApp"`, `AppListEntry="none"`) with an
-**AppExecutionAlias** (`DesktopBridgeTray.exe`). The service launches that alias:
+- **At logon:** the package's `windows.startupTask` launches `TrayHelper.exe` (with package
+  identity). Only the **tray icon** appears — no window, no UWP UI.
+- **Open (tray):** `TrayHelper` activates the UWP app via `shell:AppsFolder\<PFN>!App`. The UWP app
+  calls `FullTrustProcessLauncher`, which starts **WPF**; WPF opens the `AppServiceConnection`, so
+  **UWP ↔ WPF IPC works**, and its window is shown.
+- **Exit (tray):** `TrayHelper` enumerates and terminates the package's other processes (the UWP app
+  and WPF) by package family name, then removes the icon and quits.
 
-1. `TrayLauncherService` gets the active console session token
-   (`WTSGetActiveConsoleSessionId` → `WTSQueryUserToken` → `DuplicateTokenEx`).
-2. It resolves the per-user alias path
-   `%LOCALAPPDATA%\Microsoft\WindowsApps\DesktopBridgeTray.exe` (`SHGetKnownFolderPath` with the
-   user token) and starts it with `CreateProcessAsUser`. Launching the alias gives the process
-   **full package identity**, and only the **tray icon** appears (no UWP UI).
-3. WPF opens the `AppServiceConnection` to `SampleInteropService` → the UWP background host
-   activates headlessly → **UWP ↔ WPF IPC works**.
-4. When the user later launches the **UWP app** from Start, its `MainPage` calls
-   `FullTrustProcessLauncher`, which starts a second WPF instance; the single-instance guard sees
-   the tray instance already running and sends it `WM_SHOWME`, so the **WPF window is shown**.
+> The native helper is the only owner of the tray icon; WPF no longer creates one. There is **no
+> Windows service** in this design — the tray comes from a per-user startup task (lighter, no
+> LocalSystem / restricted capabilities, and it doesn't run before the user is present).
 
-`TRAYLAUNCHER_ALIAS` (full path or bare exe name) can override the alias path for manual testing.
-
-> The service launches **WPF** (same package) directly via its alias — it never activates the UWP
-> UI, so installation/logon brings up only the tray icon.
-
-## Packaged service manifest wiring
+## Manifest wiring
 
 In [`WAPP/Package.appxmanifest`](WAPP/Package.appxmanifest):
 
-- `xmlns:desktop6="http://schemas.microsoft.com/appx/manifest/desktop/windows10/6"` namespace.
-- A `windows.service` extension under the **`<Application>`** `<Extensions>` (the packaging
-  validator requires it there, not at package level):
+- The UWP `Application Id="App"` keeps the `windows.appService` (`SampleInteropService`) and
+  `windows.fullTrustProcess` (`WPF\WPF.exe`) extensions.
+- A second hidden full-trust entry runs the native helper at logon:
   ```xml
-  <desktop6:Extension Category="windows.service"
-      Executable="TrayLauncherService\TrayLauncherService.exe"
-      EntryPoint="Windows.FullTrustApplication">
-    <desktop6:Service Name="TrayLauncherService" StartupType="auto" StartAccount="localSystem" />
-  </desktop6:Extension>
+  <Application Id="TrayHelper" Executable="TrayHelper\TrayHelper.exe"
+               EntryPoint="Windows.FullTrustApplication">
+    <uap:VisualElements ... AppListEntry="none">...</uap:VisualElements>
+    <Extensions>
+      <uap5:Extension Category="windows.startupTask">
+        <uap5:StartupTask TaskId="DesktopBridgeTrayHelper" Enabled="true" DisplayName="DesktopBridge Tray" />
+      </uap5:Extension>
+    </Extensions>
+  </Application>
   ```
-- `<rescap:Capability Name="packagedServices" />` and `<rescap:Capability Name="localSystemServices" />`
-  (required to install a packaged service and run it as LocalSystem).
-- `<rescap:Capability Name="runFullTrust" />` (existing, for the WPF full-trust process).
-- `Windows.Desktop` min version raised to **10.0.19041** (packaged services need Windows 10 2004+).
-- A second hidden full-trust `Application Id="TrayApp"` (`Executable="WPF\WPF.exe"`,
-  `AppListEntry="none"`) with a `uap5:AppExecutionAlias` (`DesktopBridgeTray.exe`) — this is what the
-  service launches so WPF starts with identity, tray-only.
-
-The service is installed when the package is installed and removed on uninstall.
+- Capabilities: only `internetClient` and `<rescap:Capability Name="runFullTrust" />`.
 
 ## Building
 
-### What builds with the .NET 8 SDK (no Visual Studio)
+### Builds with the .NET 8 SDK (no Visual Studio)
 
 ```sh
 dotnet build WPF/WPF.csproj -c Release
-dotnet build TrayLauncherService/TrayLauncherService.csproj -c Release
 ```
 
-Both compile cleanly with the .NET 8 SDK on this machine.
+The native **TrayHelper** (C++) builds with the installed VC++ Build Tools:
 
-### What requires Visual Studio
-
-`DesktopBridge` (UWP) and `WAPP` (MSIX packaging) need **Visual Studio 2022/2026** with:
-
-- **Universal Windows Platform development** workload (UWP build targets).
-- **.NET / MSIX Packaging Tools** (the `.wapproj` DesktopBridge packaging targets).
-- Windows SDK **10.0.26100.0** (already installed here; projects were retargeted from the missing
-  `10.0.22621.0` to `10.0.26100.0`).
-
-Open `DesktopBridge.sln` in Visual Studio, set **WAPP** as the startup project, choose an `x64`
-configuration, and Build / Deploy to produce and install the MSIX (with the service).
-
-> Note: these two project types cannot be built by `dotnet build` / the standalone MSBuild Build
-> Tools — the UWP `WindowsXaml` and the `DesktopBridge` packaging MSBuild targets ship only with the
-> Visual Studio workloads above.
-
-## Manually testing the service (without packaging)
-
-From an **elevated** prompt (LocalSystem cross-session launch requires admin):
-
-```powershell
-# Build
-dotnet publish TrayLauncherService\TrayLauncherService.csproj -c Release -r win-x64 --self-contained false -o C:\Temp\TrayLauncherService
-
-# Tell it which app to activate (full PFN!App, or just the package family name)
-setx TRAYLAUNCHER_AUMID "<PackageFamilyName>!App" /M
-
-# Run the one-shot launch logic in the foreground
-C:\Temp\TrayLauncherService\TrayLauncherService.exe --console
+```sh
+msbuild TrayHelper/TrayHelper.vcxproj -p:Configuration=Release -p:Platform=x64
 ```
 
-Get the package family name with:
+### Requires Visual Studio
 
-```powershell
-Get-AppxPackage *WAPP* | Select-Object Name, PackageFamilyName
-```
+`DesktopBridge` (UWP) and `WAPP` (MSIX packaging) need **Visual Studio 2022/2026** with the
+**Universal Windows Platform development** and **.NET / MSIX Packaging Tools** workloads
+(plus the **Desktop development with C++** workload for `TrayHelper`), and Windows SDK
+**10.0.26100.0**. Open `DesktopBridge.sln`, set **WAPP** as startup, choose `x64`, and Build /
+Deploy to produce and install the MSIX. CI ([`.github/workflows/build-and-release.yml`](../.github/workflows/build-and-release.yml))
+does this on a GitHub `windows-latest` runner.
 
-Logs are written to `C:\ProgramData\DesktopBridge\TrayLauncherService.log`.
+## Manually testing the tray helper (without packaging)
+
+`TrayHelper.exe` can be run directly, but **outside the package it has no identity**, so "Open"
+(which resolves `GetCurrentPackageFamilyName`) won't find the UWP app. To test the tray UI itself,
+run `x64\Release\TrayHelper.exe`; for the full Open/IPC flow, install the MSIX.

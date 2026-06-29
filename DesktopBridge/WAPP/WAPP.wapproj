@@ -79,6 +79,6 @@
   <ItemGroup>
     <ProjectReference Include="..\DesktopBridge\DesktopBridge.csproj" />
     <ProjectReference Include="..\WPF\WPF.csproj" />
-    <ProjectReference Include="..\TrayLauncherService\TrayLauncherService.csproj" />
+    <ProjectReference Include="..\TrayHelper\TrayHelper.vcxproj" />
   </ItemGroup>
 </Project>

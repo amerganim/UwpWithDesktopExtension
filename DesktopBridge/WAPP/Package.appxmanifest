@@ -6,8 +6,7 @@
   xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
   xmlns:uap5="http://schemas.microsoft.com/appx/manifest/uap/windows10/5"
   xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
-  xmlns:desktop6="http://schemas.microsoft.com/appx/manifest/desktop/windows10/6"
-  IgnorableNamespaces="uap uap5 rescap desktop desktop6">
+  IgnorableNamespaces="uap uap5 rescap desktop">
 
   <Identity
     Name="16d8fb9e-dfee-4bd6-9bc2-f6b775863920"
@@ -22,8 +21,7 @@
 
   <Dependencies>
     <TargetDeviceFamily Name="Windows.Universal" MinVersion="10.0.0.0" MaxVersionTested="10.0.0.0" />
-    <!-- Packaged Windows services require Windows 10, version 2004 (build 19041) or later. -->
-    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.19041.0" MaxVersionTested="10.0.19041.0" />
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.17763.0" MaxVersionTested="10.0.19041.0" />
   </Dependencies>
 
   <Resources>
@@ -63,38 +61,20 @@
           </desktop:FullTrustProcess>
         </desktop:Extension>
 
-        <!--
-          Installs a Windows service together with the package (registered on install,
-          removed on uninstall).
-            - StartupType="auto"        : starts automatically at boot.
-            - StartAccount="localSystem": runs with LocalSystem privileges in session 0.
-            - EntryPoint="Windows.FullTrustApplication": the executable is a full-trust Win32 app.
-        -->
-        <desktop6:Extension
-            Category="windows.service"
-            Executable="TrayLauncherService\TrayLauncherService.exe"
-            EntryPoint="Windows.FullTrustApplication">
-          <desktop6:Service
-              Name="TrayLauncherService"
-              StartupType="auto"
-              StartAccount="localSystem" />
-        </desktop6:Extension>
-
       </Extensions>
     </Application>
 
     <!--
-      Hidden full-trust entry for the WPF tray app. The Windows service launches this via its
-      AppExecutionAlias so WPF starts WITH package identity (required for the app-service / IPC)
-      and shows only its tray icon - without bringing up the UWP UI.
-      AppListEntry="none" keeps it out of the Start menu.
+      Hidden full-trust entry for the native C++ tray helper. It owns the system tray icon and
+      launches at logon via a per-user startup task. From the tray the user can open or exit the
+      main UWP app. AppListEntry="none" keeps it out of the Start menu.
     -->
-    <Application Id="TrayApp"
-      Executable="WPF\WPF.exe"
+    <Application Id="TrayHelper"
+      Executable="TrayHelper\TrayHelper.exe"
       EntryPoint="Windows.FullTrustApplication">
       <uap:VisualElements
         DisplayName="DesktopBridge Tray"
-        Description="DesktopBridge tray launcher"
+        Description="DesktopBridge tray helper"
         BackgroundColor="transparent"
         Square150x150Logo="Images\Square150x150Logo.png"
         Square44x44Logo="Images\Square44x44Logo.png"
@@ -103,10 +83,8 @@
         <uap:SplashScreen Image="Images\SplashScreen.png" />
       </uap:VisualElements>
       <Extensions>
-        <uap5:Extension Category="windows.appExecutionAlias">
-          <uap5:AppExecutionAlias>
-            <uap5:ExecutionAlias Alias="DesktopBridgeTray.exe" />
-          </uap5:AppExecutionAlias>
+        <uap5:Extension Category="windows.startupTask">
+          <uap5:StartupTask TaskId="DesktopBridgeTrayHelper" Enabled="true" DisplayName="DesktopBridge Tray" />
         </uap5:Extension>
       </Extensions>
     </Application>
@@ -115,9 +93,5 @@
   <Capabilities>
     <Capability Name="internetClient" />
     <rescap:Capability Name="runFullTrust" />
-    <!-- Required to install a Windows service from an MSIX package... -->
-    <rescap:Capability Name="packagedServices" />
-    <!-- ...and to run that service as LocalSystem. -->
-    <rescap:Capability Name="localSystemServices" />
   </Capabilities>
 </Package>
