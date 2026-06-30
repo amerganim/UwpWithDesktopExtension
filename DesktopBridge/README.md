@@ -16,11 +16,11 @@ UWP app + full-trust WPF extension (IPC) + a native C++ system-tray helper.
 ## Behavior
 
 - **Autostart:** a packaged `windows.startupTask` is **blocked by Windows until the app is launched
-  once** (by design — see the note below). To make the tray appear after a fresh install with *no*
-  main-app launch, the bundled **`Install.ps1`** (a) starts the helper immediately and (b) registers
-  a per-user **logon Run entry** pointing at the helper's `AppExecutionAlias`
-  (`DesktopBridgeTray.exe`) — a classic autostart that is *not* subject to the startup-task gate.
-  So the tray shows right after install and on every sign-in without ever opening the main app.
+  once** (by design — see the note below). To make the tray appear with *no* main-app launch,
+  install the package (`Add-AppDevPackage.ps1`) and then run **`EnableTray.ps1`** (no admin): it
+  starts the helper now and registers a per-user **logon Run entry** pointing at the helper's
+  `AppExecutionAlias` (`DesktopBridgeTray.exe`) — a classic autostart that is *not* subject to the
+  startup-task gate. So the tray shows immediately and on every sign-in without opening the main app.
 - The manifest's `windows.startupTask` is kept too (the proper, uninstall-managed mechanism that
   works once the app has been launched). The helper is single-instance, so the two autostart paths
   never produce two icons.

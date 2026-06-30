@@ -121,9 +121,9 @@ jobs:
             exit 1
           }
           Write-Host "Found package: $($msix.FullName)"
-          # Include our installer (starts the tray + registers logon autostart) and uninstaller.
-          Copy-Item (Join-Path $env:GITHUB_WORKSPACE 'build/Install.ps1')   -Destination $msix.DirectoryName -Force
-          Copy-Item (Join-Path $env:GITHUB_WORKSPACE 'build/Uninstall.ps1') -Destination $msix.DirectoryName -Force
+          # Include our tray-enable + uninstall helper scripts alongside the generated installer.
+          Copy-Item (Join-Path $env:GITHUB_WORKSPACE 'build/EnableTray.ps1') -Destination $msix.DirectoryName -Force
+          Copy-Item (Join-Path $env:GITHUB_WORKSPACE 'build/Uninstall.ps1')  -Destination $msix.DirectoryName -Force
           $zip = Join-Path $env:GITHUB_WORKSPACE 'DesktopBridge-MSIX.zip'
           # Zip the whole sideload folder: it includes the .msix, the public .cer, the generated
           # Add-AppDevPackage.ps1, and our Install.ps1 (install + start tray immediately).
@@ -148,12 +148,13 @@ jobs:
             ## Install
 
             1. Download and extract **DesktopBridge-MSIX.zip**.
-            2. Right-click **Install.ps1** → **Run with PowerShell** (it elevates, installs the
-               bundled self-signed certificate + dependencies + app, then **starts the tray icon
-               immediately**). Or run **Add-AppDevPackage.ps1** to only install (the tray then
-               appears at your next sign-in).
-            3. The native tray helper's **startup task** is registered, so the tray icon also starts
-               automatically on every later sign-in. From the tray: **Open** / **Exit** the app.
+            2. Right-click **Add-AppDevPackage.ps1** → **Run with PowerShell** (installs the bundled
+               self-signed certificate + dependencies + app).
+            3. Right-click **EnableTray.ps1** → **Run with PowerShell** (no admin). It starts the tray
+               icon now and registers a per-user logon autostart, so the tray appears on every
+               sign-in **without launching the main app**. From the tray: **Open** / **Exit**.
+
+            (To remove everything later, run **Uninstall.ps1**.)
 
             ### Prerequisites
             - Windows 10 version 1809 (build 17763) or later.
