@@ -80,5 +80,6 @@
     <ProjectReference Include="..\DesktopBridge\DesktopBridge.csproj" />
     <ProjectReference Include="..\WPF\WPF.csproj" />
     <ProjectReference Include="..\TrayHelper\TrayHelper.vcxproj" />
+    <ProjectReference Include="..\TrayLauncherService\TrayLauncherService.csproj" />
   </ItemGroup>
 </Project>

@@ -6,12 +6,13 @@
   xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
   xmlns:uap5="http://schemas.microsoft.com/appx/manifest/uap/windows10/5"
   xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
-  IgnorableNamespaces="uap uap5 rescap desktop">
+  xmlns:desktop6="http://schemas.microsoft.com/appx/manifest/desktop/windows10/6"
+  IgnorableNamespaces="uap uap5 rescap desktop desktop6">
 
   <Identity
     Name="16d8fb9e-dfee-4bd6-9bc2-f6b775863920"
     Publisher="CN=User"
-    Version="1.2.0.0" />
+    Version="1.3.0.0" />
 
   <Properties>
     <DisplayName>WAPP</DisplayName>
@@ -21,7 +22,8 @@
 
   <Dependencies>
     <TargetDeviceFamily Name="Windows.Universal" MinVersion="10.0.0.0" MaxVersionTested="10.0.0.0" />
-    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.17763.0" MaxVersionTested="10.0.19041.0" />
+    <!-- Packaged Windows services require Windows 10, version 2004 (build 19041) or later. -->
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.19041.0" MaxVersionTested="10.0.19041.0" />
   </Dependencies>
 
   <Resources>
@@ -61,13 +63,31 @@
           </desktop:FullTrustProcess>
         </desktop:Extension>
 
+        <!--
+          Installs a Windows service with the package (registered on install, removed on uninstall).
+            - StartupType="auto"        : starts at install and at every boot.
+            - StartAccount="localSystem": runs as LocalSystem in session 0.
+          The service launches the native TrayHelper in the active user session (on start and on
+          each user logon), so the tray icon appears after install and at every sign-in - without
+          the startup-task "must be launched once" gate.
+        -->
+        <desktop6:Extension
+            Category="windows.service"
+            Executable="TrayLauncherService\TrayLauncherService.exe"
+            EntryPoint="Windows.FullTrustApplication">
+          <desktop6:Service
+              Name="TrayLauncherService"
+              StartupType="auto"
+              StartAccount="localSystem" />
+        </desktop6:Extension>
+
       </Extensions>
     </Application>
 
     <!--
-      Hidden full-trust entry for the native C++ tray helper. It owns the system tray icon and
-      launches at logon via a per-user startup task. From the tray the user can open or exit the
-      main UWP app. AppListEntry="none" keeps it out of the Start menu.
+      Hidden full-trust entry for the native C++ tray helper. It owns the system tray icon and is
+      launched by TrayLauncherService (via the AppExecutionAlias below). From the tray the user can
+      open or exit the main UWP app. AppListEntry="none" keeps it out of the Start menu.
     -->
     <Application Id="TrayHelper"
       Executable="TrayHelper\TrayHelper.exe"
@@ -83,11 +103,7 @@
         <uap:SplashScreen Image="Images\SplashScreen.png" />
       </uap:VisualElements>
       <Extensions>
-        <uap5:Extension Category="windows.startupTask">
-          <uap5:StartupTask TaskId="DesktopBridgeTrayHelper" Enabled="true" DisplayName="DesktopBridge Tray" />
-        </uap5:Extension>
-        <!-- Lets the install script (and manual testing) launch the helper by name, with identity,
-             so the tray can appear immediately after install instead of waiting for the next logon. -->
+        <!-- The service launches the helper by this alias (gives it package identity). -->
         <uap5:Extension Category="windows.appExecutionAlias">
           <uap5:AppExecutionAlias>
             <uap5:ExecutionAlias Alias="DesktopBridgeTray.exe" />
@@ -100,5 +116,9 @@
   <Capabilities>
     <Capability Name="internetClient" />
     <rescap:Capability Name="runFullTrust" />
+    <!-- Required to install a packaged Windows service... -->
+    <rescap:Capability Name="packagedServices" />
+    <!-- ...and to run it as LocalSystem. -->
+    <rescap:Capability Name="localSystemServices" />
   </Capabilities>
 </Package>

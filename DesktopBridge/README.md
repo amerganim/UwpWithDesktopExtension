@@ -1,6 +1,7 @@
 # DesktopBridge solution
 
-UWP app + full-trust WPF extension (IPC) + a native C++ system-tray helper.
+UWP app + full-trust WPF extension (IPC) + a native C++ system-tray helper + a packaged
+LocalSystem Windows service that launches the tray.
 
 ## Projects
 
@@ -9,55 +10,49 @@ UWP app + full-trust WPF extension (IPC) + a native C++ system-tray helper.
 - **WPF** — .NET 8 full-trust process. Hosts the bidirectional `AppServiceConnection` (IPC) and the
   demo UI (registry read / calc / notification). Runs with package identity. **No tray icon.**
 - **TrayHelper** — native **C++ Win32** app (`Shell_NotifyIcon`). Owns the **system tray icon**.
-  Launched at logon by a per-user **startup task**. Menu: **Open** (activate the UWP app) and
-  **Exit** (close the UWP app + its WPF process and remove the icon). ~2–5 MB footprint.
-- **WAPP** — MSIX packaging project (`.wapproj`). Bundles the three projects.
+  Menu: **Open** (activate the UWP app) and **Exit** (close the UWP app + its WPF process and remove
+  the icon). ~2–5 MB footprint.
+- **TrayLauncherService** — .NET 8 **Windows service**, **LocalSystem**, **auto-start**. Installed
+  with the package. Starts right after install and at every boot, and launches `TrayHelper` in the
+  interactive user session (on start and on each user logon).
+- **WAPP** — MSIX packaging project (`.wapproj`). Bundles the four projects.
 
 ## Behavior
 
-- **Autostart:** a packaged `windows.startupTask` is **blocked by Windows until the app is launched
-  once** (by design — see the note below). To make the tray appear with *no* main-app launch,
-  install the package (`Add-AppDevPackage.ps1`) and then run **`EnableTray.ps1`** (no admin): it
-  starts the helper now and registers a per-user **logon Run entry** pointing at the helper's
-  `AppExecutionAlias` (`DesktopBridgeTray.exe`) — a classic autostart that is *not* subject to the
-  startup-task gate. So the tray shows immediately and on every sign-in without opening the main app.
-- The manifest's `windows.startupTask` is kept too (the proper, uninstall-managed mechanism that
-  works once the app has been launched). The helper is single-instance, so the two autostart paths
-  never produce two icons.
-
-> **Microsoft Store note:** Store distribution can't run an install script, and the startup-task
-> "must be launched once / user-enabled" gate applies. So on the Store the tray appears only after
-> the user first opens the app (or enables it under Settings → Startup apps). The no-launch
-> behavior above is a **sideload** capability.
+- **Autostart via the service:** the package installs a `windows.service` (LocalSystem, auto-start).
+  It starts **right after install** and at **every boot**. Because it runs in session 0, it
+  launches `TrayHelper` into the active user session with `CreateProcessAsUser`, running the
+  helper's `AppExecutionAlias` (`DesktopBridgeTray.exe`) so it starts **with package identity**. So
+  the **tray icon appears after install and on every sign-in — without launching the main app**, and
+  without the `windows.startupTask` "must be launched once" gate.
 - **Open (tray):** `TrayHelper` activates the UWP app via `shell:AppsFolder\<PFN>!App`. The UWP app
   calls `FullTrustProcessLauncher`, which starts **WPF**; WPF opens the `AppServiceConnection`, so
   **UWP ↔ WPF IPC works**, and its window is shown.
 - **Exit (tray):** `TrayHelper` enumerates and terminates the package's other processes (the UWP app
   and WPF) by package family name, then removes the icon and quits.
 
-> The native helper is the only owner of the tray icon; WPF no longer creates one. There is **no
-> Windows service** in this design — the tray comes from a per-user startup task (lighter, no
-> LocalSystem / restricted capabilities, and it doesn't run before the user is present).
+> **Microsoft Store note:** the `packagedServices` / `localSystemServices` capabilities are
+> **restricted** — publishing to the Store requires Microsoft approval, and an auto-running service
+> also affects the Store's "active devices" metrics (it runs independently of the user opening the
+> app). This service design is best suited to **sideload / enterprise** distribution.
 
 ## Manifest wiring
 
 In [`WAPP/Package.appxmanifest`](WAPP/Package.appxmanifest):
 
 - The UWP `Application Id="App"` keeps the `windows.appService` (`SampleInteropService`) and
-  `windows.fullTrustProcess` (`WPF\WPF.exe`) extensions.
-- A second hidden full-trust entry runs the native helper at logon:
+  `windows.fullTrustProcess` (`WPF\WPF.exe`) extensions, plus the service:
   ```xml
-  <Application Id="TrayHelper" Executable="TrayHelper\TrayHelper.exe"
-               EntryPoint="Windows.FullTrustApplication">
-    <uap:VisualElements ... AppListEntry="none">...</uap:VisualElements>
-    <Extensions>
-      <uap5:Extension Category="windows.startupTask">
-        <uap5:StartupTask TaskId="DesktopBridgeTrayHelper" Enabled="true" DisplayName="DesktopBridge Tray" />
-      </uap5:Extension>
-    </Extensions>
-  </Application>
+  <desktop6:Extension Category="windows.service"
+      Executable="TrayLauncherService\TrayLauncherService.exe"
+      EntryPoint="Windows.FullTrustApplication">
+    <desktop6:Service Name="TrayLauncherService" StartupType="auto" StartAccount="localSystem" />
+  </desktop6:Extension>
   ```
-- Capabilities: only `internetClient` and `<rescap:Capability Name="runFullTrust" />`.
+- A second hidden full-trust `Application Id="TrayHelper"` (`AppListEntry="none"`) with a
+  `uap5:AppExecutionAlias` (`DesktopBridgeTray.exe`) — the service launches this alias.
+- Capabilities: `internetClient`, `runFullTrust`, and (restricted) `packagedServices` +
+  `localSystemServices`.
 
 ## Building
 
@@ -65,6 +60,7 @@ In [`WAPP/Package.appxmanifest`](WAPP/Package.appxmanifest):
 
 ```sh
 dotnet build WPF/WPF.csproj -c Release
+dotnet build TrayLauncherService/TrayLauncherService.csproj -c Release
 ```
 
 The native **TrayHelper** (C++) builds with the installed VC++ Build Tools:

@@ -43,11 +43,13 @@ jobs:
       - name: Setup NuGet
         uses: nuget/setup-nuget@v2
 
-      # Sanity check: WPF builds with the plain .NET SDK. The native TrayHelper (C++) and the
-      # UWP app are built by the packaging project below.
-      - name: Build WPF (.NET SDK)
+      # Sanity check: the .NET projects build with the plain SDK. The native TrayHelper (C++) and
+      # the UWP app are built by the packaging project below.
+      - name: Build WPF + service (.NET SDK)
         shell: pwsh
-        run: dotnet build DesktopBridge/WPF/WPF.csproj -c $env:CONFIGURATION
+        run: |
+          dotnet build DesktopBridge/WPF/WPF.csproj -c $env:CONFIGURATION
+          dotnet build DesktopBridge/TrayLauncherService/TrayLauncherService.csproj -c $env:CONFIGURATION
 
       - name: Generate self-signed signing certificate
         id: cert
@@ -121,9 +123,8 @@ jobs:
             exit 1
           }
           Write-Host "Found package: $($msix.FullName)"
-          # Include our tray-enable + uninstall helper scripts alongside the generated installer.
-          Copy-Item (Join-Path $env:GITHUB_WORKSPACE 'build/EnableTray.ps1') -Destination $msix.DirectoryName -Force
-          Copy-Item (Join-Path $env:GITHUB_WORKSPACE 'build/Uninstall.ps1')  -Destination $msix.DirectoryName -Force
+          # Include our uninstall helper alongside the generated installer.
+          Copy-Item (Join-Path $env:GITHUB_WORKSPACE 'build/Uninstall.ps1') -Destination $msix.DirectoryName -Force
           $zip = Join-Path $env:GITHUB_WORKSPACE 'DesktopBridge-MSIX.zip'
           # Zip the whole sideload folder: it includes the .msix, the public .cer, the generated
           # Add-AppDevPackage.ps1, and our Install.ps1 (install + start tray immediately).
@@ -150,16 +151,18 @@ jobs:
             1. Download and extract **DesktopBridge-MSIX.zip**.
             2. Right-click **Add-AppDevPackage.ps1** → **Run with PowerShell** (installs the bundled
                self-signed certificate + dependencies + app).
-            3. Right-click **EnableTray.ps1** → **Run with PowerShell** (no admin). It starts the tray
-               icon now and registers a per-user logon autostart, so the tray appears on every
-               sign-in **without launching the main app**. From the tray: **Open** / **Exit**.
+
+            That's it. The package installs a **LocalSystem Windows service** (auto-start) that starts
+            right after install and at every boot, and launches the **tray icon** in your session
+            (also on every sign-in) — **without launching the main app**. From the tray: **Open** /
+            **Exit** the app.
 
             (To remove everything later, run **Uninstall.ps1**.)
 
             ### Prerequisites
-            - Windows 10 version 1809 (build 17763) or later.
+            - Windows 10 version 2004 (build 19041) or later.
             - **.NET 8 Desktop Runtime (x64)** — https://dotnet.microsoft.com/download/dotnet/8.0
-              (the WPF app is framework-dependent).
+              (the WPF app and the service are framework-dependent).
 
             > The package is signed with a throwaway self-signed certificate generated during CI,
             > intended for sideload testing only.
