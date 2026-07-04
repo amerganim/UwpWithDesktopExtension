@@ -13,8 +13,9 @@ LocalSystem Windows service that launches the tray.
   Menu: **Open** (activate the UWP app) and **Exit** (close the UWP app + its WPF process and remove
   the icon). ~2–5 MB footprint.
 - **TrayLauncherService** — .NET 8 **Windows service**, **LocalSystem**, **auto-start**. Installed
-  with the package. Starts right after install and at every boot, and launches `TrayHelper` in the
-  interactive user session (on start and on each user logon).
+  with the package. Starts right after install and at every boot, launches `TrayHelper` in the
+  interactive user session, and then **stops itself** (its only job is the launch). If no user is
+  signed in yet at boot, it waits for logon, launches then, and stops.
 - **WAPP** — MSIX packaging project (`.wapproj`). Bundles the four projects.
 
 ## Behavior
@@ -25,6 +26,9 @@ LocalSystem Windows service that launches the tray.
   helper's `AppExecutionAlias` (`DesktopBridgeTray.exe`) so it starts **with package identity**. So
   the **tray icon appears after install and on every sign-in — without launching the main app**, and
   without the `windows.startupTask` "must be launched once" gate.
+- **The service stops itself** once it has launched the tray (nothing left to do). It's auto-start,
+  so it runs again at the next boot; at boot before anyone is signed in it stays running only until
+  a user logs on, launches the tray, and then stops.
 - **Open (tray):** `TrayHelper` activates the UWP app via `shell:AppsFolder\<PFN>!App`. The UWP app
   calls `FullTrustProcessLauncher`, which starts **WPF**; WPF opens the `AppServiceConnection`, so
   **UWP ↔ WPF IPC works**, and its window is shown.
