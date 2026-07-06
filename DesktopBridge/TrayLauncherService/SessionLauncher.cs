@@ -14,29 +14,37 @@ namespace TrayLauncherService
     /// </summary>
     internal static class SessionLauncher
     {
-        // Must match the Alias declared in WAPP/Package.appxmanifest (TrayHelper AppExecutionAlias).
-        private const string AliasExeName = "DesktopBridgeTray.exe";
+        // Aliases declared in WAPP/Package.appxmanifest.
+        public const string TrayAlias = "DesktopBridgeTray.exe";
+        public const string WpfAlias  = "DesktopBridgeWpf.exe";
 
         /// <summary>
-        /// Launches the tray helper in the active console session.
-        /// Returns true only if the helper process was actually created.
+        /// Gets the id of the active console session, if a user is signed in.
         /// </summary>
-        public static bool LaunchInActiveSession()
+        public static bool TryGetActiveSession(out uint sessionId)
         {
-            uint sessionId = WTSGetActiveConsoleSessionId();
+            sessionId = WTSGetActiveConsoleSessionId();
             if (sessionId == 0xFFFFFFFF)
             {
-                ServiceLog.Write("No active console session; nothing to launch.");
+                ServiceLog.Write("No active console session.");
                 return false;
             }
-
-            return LaunchInSession(sessionId);
+            return true;
         }
 
         /// <summary>
-        /// Launches the tray helper in the given session. Returns true if the process was created.
+        /// Launches the given alias in the active console session.
+        /// Returns true only if the process was actually created.
         /// </summary>
-        public static bool LaunchInSession(uint sessionId)
+        public static bool LaunchInActiveSession(string aliasExeName = TrayAlias)
+        {
+            return TryGetActiveSession(out uint sessionId) && LaunchInSession(sessionId, aliasExeName);
+        }
+
+        /// <summary>
+        /// Launches the given alias in the given session. Returns true if the process was created.
+        /// </summary>
+        public static bool LaunchInSession(uint sessionId, string aliasExeName)
         {
             IntPtr userToken = IntPtr.Zero;
             IntPtr primaryToken = IntPtr.Zero;
@@ -64,7 +72,7 @@ namespace TrayLauncherService
                     return false;
                 }
 
-                string? aliasPath = ResolveAliasPath(primaryToken);
+                string? aliasPath = ResolveAliasPath(primaryToken, aliasExeName);
                 if (aliasPath is null || !File.Exists(aliasPath))
                 {
                     ServiceLog.Write($"Tray app alias not found (resolved: '{aliasPath ?? "<null>"}'). " +
@@ -102,7 +110,7 @@ namespace TrayLauncherService
                 launched = created;
                 if (created)
                 {
-                    ServiceLog.Write($"Launched tray app '{aliasPath}' in session {sessionId}.");
+                    ServiceLog.Write($"Launched '{aliasPath}' in session {sessionId}.");
                 }
                 else
                 {
@@ -130,15 +138,9 @@ namespace TrayLauncherService
         /// %LOCALAPPDATA%\Microsoft\WindowsApps\&lt;alias&gt;. The TRAYLAUNCHER_ALIAS environment
         /// variable can override it (full path or bare exe name) for manual testing.
         /// </summary>
-        private static string? ResolveAliasPath(IntPtr userToken)
+        private static string? ResolveAliasPath(IntPtr userToken, string aliasExeName)
         {
-            string? overridePath = Environment.GetEnvironmentVariable("TRAYLAUNCHER_ALIAS");
-            if (!string.IsNullOrWhiteSpace(overridePath))
-            {
-                return Path.IsPathRooted(overridePath) ? overridePath : ExpandAliasInUserApps(userToken, overridePath);
-            }
-
-            return ExpandAliasInUserApps(userToken, AliasExeName);
+            return ExpandAliasInUserApps(userToken, aliasExeName);
         }
 
         private static string? ExpandAliasInUserApps(IntPtr userToken, string exeName)

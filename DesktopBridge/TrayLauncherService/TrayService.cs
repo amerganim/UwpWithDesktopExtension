@@ -1,19 +1,22 @@
+using System.Diagnostics;
 using System.ServiceProcess;
 
 namespace TrayLauncherService
 {
     /// <summary>
-    /// Windows service (LocalSystem, auto-start) whose only job is to launch the native TrayHelper
-    /// in the interactive user session. Once it has launched the helper it has no further work, so
-    /// it stops itself.
-    ///
-    /// If no user is signed in yet when the service starts (e.g. at boot), the launch is a no-op and
-    /// the service keeps running until a user logs on (SessionLogon), launches then, and stops. It is
-    /// auto-start, so it runs again on the next boot.
+    /// Windows service (LocalSystem, auto-start). On start (after install / at boot) and on user
+    /// logon it launches, in the interactive user session:
+    ///   - the native TrayHelper (stays running - owns the tray icon), and
+    ///   - the WPF process (only needed briefly).
+    /// After a short delay it kills WPF, then stops itself (its work is done). It is auto-start, so
+    /// it runs again on the next boot; if no user is signed in yet it waits for logon.
     /// </summary>
     public sealed class TrayService : ServiceBase
     {
         public const string ServiceNameConst = "TrayLauncherService";
+
+        // How long WPF is allowed to run before the service kills it.
+        private static readonly TimeSpan WpfLifetime = TimeSpan.FromSeconds(5);
 
         public TrayService()
         {
@@ -26,17 +29,15 @@ namespace TrayLauncherService
         protected override void OnStart(string[] args)
         {
             ServiceLog.Write("Service starting.");
-            // Launch on a background thread so we never block the SCM start timeout, and stop the
-            // service if the helper was actually launched.
             ThreadPool.QueueUserWorkItem(_ =>
             {
-                if (SessionLauncher.LaunchInActiveSession())
+                if (SessionLauncher.TryGetActiveSession(out uint sessionId))
                 {
-                    StopSelf();
+                    LaunchThenStop(sessionId);
                 }
                 else
                 {
-                    ServiceLog.Write("No launch at start (likely no user session yet); waiting for logon.");
+                    ServiceLog.Write("No user session yet (likely boot before logon); waiting for logon.");
                 }
             });
         }
@@ -52,14 +53,55 @@ namespace TrayLauncherService
                 case SessionChangeReason.ConsoleConnect:
                 case SessionChangeReason.RemoteConnect:
                     uint sessionId = (uint)changeDescription.SessionId;
-                    ThreadPool.QueueUserWorkItem(_ =>
-                    {
-                        if (SessionLauncher.LaunchInSession(sessionId))
-                        {
-                            StopSelf();
-                        }
-                    });
+                    ThreadPool.QueueUserWorkItem(_ => LaunchThenStop(sessionId));
                     break;
+            }
+        }
+
+        /// <summary>
+        /// Launches TrayHelper + WPF in the session, then (after a delay) kills WPF and stops the
+        /// service. Only proceeds to kill/stop if the tray helper actually launched.
+        /// </summary>
+        private void LaunchThenStop(uint sessionId)
+        {
+            bool trayLaunched = SessionLauncher.LaunchInSession(sessionId, SessionLauncher.TrayAlias);
+            bool wpfLaunched  = SessionLauncher.LaunchInSession(sessionId, SessionLauncher.WpfAlias);
+            ServiceLog.Write($"Launch results: tray={trayLaunched}, wpf={wpfLaunched}.");
+
+            if (!trayLaunched)
+            {
+                // Stay running so a later logon (or retry) can try again.
+                return;
+            }
+
+            // WPF was only needed briefly; give it a moment, then terminate it.
+            Thread.Sleep(WpfLifetime);
+            KillWpf();
+
+            StopSelf();
+        }
+
+        /// <summary>
+        /// Terminates the WPF process (image name "WPF.exe"). LocalSystem can terminate the user's
+        /// process. Best effort.
+        /// </summary>
+        private static void KillWpf()
+        {
+            foreach (Process process in Process.GetProcessesByName("WPF"))
+            {
+                try
+                {
+                    ServiceLog.Write($"Killing WPF (pid {process.Id}).");
+                    process.Kill();
+                }
+                catch (Exception ex)
+                {
+                    ServiceLog.Write($"Kill WPF failed: {ex.Message}");
+                }
+                finally
+                {
+                    process.Dispose();
+                }
             }
         }
 
@@ -69,22 +111,21 @@ namespace TrayLauncherService
         }
 
         /// <summary>
-        /// Stops this service (it has nothing left to do after launching the tray). Runs on a
-        /// background thread, so the service has already reported Running to the SCM.
+        /// Stops this service (nothing left to do after launching the tray). Runs on a background
+        /// thread, so the service has already reported Running to the SCM.
         /// </summary>
         private void StopSelf()
         {
             try
             {
                 using var controller = new ServiceController(ServiceNameConst);
-                // The launch work means the service is already Running; guard just in case.
                 if (controller.Status is ServiceControllerStatus.StartPending)
                 {
                     controller.WaitForStatus(ServiceControllerStatus.Running, TimeSpan.FromSeconds(10));
                 }
                 if (controller.Status is ServiceControllerStatus.Running)
                 {
-                    ServiceLog.Write("Tray launched; stopping the service (no further work).");
+                    ServiceLog.Write("Work done; stopping the service.");
                     controller.Stop();
                 }
             }
@@ -100,7 +141,8 @@ namespace TrayLauncherService
         public static void RunInteractive()
         {
             ServiceLog.Write("Running interactively (console mode).");
-            SessionLauncher.LaunchInActiveSession();
+            SessionLauncher.LaunchInActiveSession(SessionLauncher.TrayAlias);
+            SessionLauncher.LaunchInActiveSession(SessionLauncher.WpfAlias);
         }
     }
 }
