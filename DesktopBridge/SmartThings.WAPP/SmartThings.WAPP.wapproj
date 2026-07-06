@@ -56,7 +56,7 @@
     <DefaultLanguage>en-US</DefaultLanguage>
     <AppxPackageSigningEnabled>false</AppxPackageSigningEnabled>
     <NoWarn>$(NoWarn);NU1702</NoWarn>
-    <EntryPointProjectUniqueName>..\DesktopBridge\DesktopBridge.csproj</EntryPointProjectUniqueName>
+    <EntryPointProjectUniqueName>..\SmartThings.UI\SmartThings.UI.csproj</EntryPointProjectUniqueName>
   </PropertyGroup>
   <ItemGroup>
     <AppxManifest Include="Package.appxmanifest">
@@ -77,9 +77,9 @@
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.22621.756" PrivateAssets="all" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\DesktopBridge\DesktopBridge.csproj" />
-    <ProjectReference Include="..\WPF\WPF.csproj" />
-    <ProjectReference Include="..\TrayHelper\TrayHelper.vcxproj" />
-    <ProjectReference Include="..\TrayLauncherService\TrayLauncherService.csproj" />
+    <ProjectReference Include="..\SmartThings.UI\SmartThings.UI.csproj" />
+    <ProjectReference Include="..\SmartThings.AVplayer\SmartThings.AVplayer.csproj" />
+    <ProjectReference Include="..\SmartThings.Tray\SmartThings.Tray.vcxproj" />
+    <ProjectReference Include="..\SmartThings.Service\SmartThings.Service.csproj" />
   </ItemGroup>
 </Project>

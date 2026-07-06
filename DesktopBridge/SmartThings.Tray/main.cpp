@@ -6,7 +6,7 @@
 //   - "Open"  -> activate the main UWP app (by its AUMID).
 //   - "Exit"  -> close the main UWP app (and its full-trust WPF process) and remove the icon.
 //
-// It is launched by TrayLauncherService (via its AppExecutionAlias), so it runs WITH package
+// It is launched by SmartThings.Service (via its AppExecutionAlias), so it runs WITH package
 // identity and can resolve its own package family name.
 
 #include <windows.h>

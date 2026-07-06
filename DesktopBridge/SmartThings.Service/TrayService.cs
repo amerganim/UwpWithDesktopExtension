@@ -13,7 +13,8 @@ namespace TrayLauncherService
     /// </summary>
     public sealed class TrayService : ServiceBase
     {
-        public const string ServiceNameConst = "TrayLauncherService";
+        // Must match the desktop6:Service Name in SmartThings.WAPP/Package.appxmanifest.
+        public const string ServiceNameConst = "SmartThings.Service";
 
         // How long WPF is allowed to run before the service kills it.
         private static readonly TimeSpan WpfLifetime = TimeSpan.FromSeconds(5);

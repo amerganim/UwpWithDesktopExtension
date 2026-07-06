@@ -1,23 +1,29 @@
-# DesktopBridge solution
+# SmartThings solution
 
-UWP app + full-trust WPF extension (IPC) + a native C++ system-tray helper + a packaged
+UWP app + full-trust player (WPF) extension (IPC) + a native C++ system-tray helper + a packaged
 LocalSystem Windows service that launches the tray.
+
+> Project files/folders and assembly names are `SmartThings.*`; the internal C# code namespaces
+> (`DesktopBridge`, `WPF`, `TrayLauncherService`) are unchanged, so `x:Class`, the UWP entry point,
+> and the app-service wiring keep working.
 
 ## Projects
 
-- **DesktopBridge** — UWP app. Hosts the `SampleInteropService` app service and launches the
-  full-trust WPF process via `FullTrustProcessLauncher`.
-- **WPF** — .NET 8 full-trust process. Hosts the bidirectional `AppServiceConnection` (IPC) and the
-  demo UI (registry read / calc / notification). Runs with package identity. **No tray icon.**
-- **TrayHelper** — native **C++ Win32** app (`Shell_NotifyIcon`). Owns the **system tray icon**.
-  Swaps between a **light/dark icon** with the system theme and shows a **localized** Open/Exit menu.
-  **Open** activates the UWP app; **Exit** closes the UWP app + its WPF process and removes the icon.
-  ~2–5 MB footprint.
-- **TrayLauncherService** — .NET 8 **Windows service**, **LocalSystem**, **auto-start**. Installed
-  with the package. Starts right after install and at every boot, launches **TrayHelper and WPF** in
-  the interactive user session, then (after a short delay) **kills WPF** and **stops itself**. If no
-  user is signed in yet at boot, it waits for logon, does the same, and stops.
-- **WAPP** — MSIX packaging project (`.wapproj`). Bundles the four projects.
+- **SmartThings.UI** — UWP app (code namespace `DesktopBridge`). Hosts the `SampleInteropService`
+  app service and launches the full-trust player via `FullTrustProcessLauncher`.
+- **SmartThings.AVplayer** — .NET 8 full-trust WPF process (code namespace `WPF`). Hosts the
+  bidirectional `AppServiceConnection` (IPC) and the demo UI. Runs with package identity. **No tray
+  icon.**
+- **SmartThings.Tray** — native **C++ Win32** app (`Shell_NotifyIcon`). Owns the **system tray
+  icon**. Swaps between a **light/dark icon** with the system theme and shows a **localized**
+  Open/Exit menu. **Open** activates the UWP app; **Exit** closes the UWP app + player and removes
+  the icon. ~2–5 MB footprint.
+- **SmartThings.Service** — .NET 8 **Windows service** (`SmartThings.Service`), **LocalSystem**,
+  **auto-start**. Installed with the package. Starts right after install and at every boot, launches
+  **SmartThings.Tray and SmartThings.AVplayer** in the interactive user session, then (after a short
+  delay) **kills the player** and **stops itself**. If no user is signed in yet at boot, it waits for
+  logon, does the same, and stops.
+- **SmartThings.WAPP** — MSIX packaging project (`.wapproj`). Bundles the four projects.
 
 ## Behavior
 
@@ -54,20 +60,22 @@ LocalSystem Windows service that launches the tray.
 
 ## Manifest wiring
 
-In [`WAPP/Package.appxmanifest`](WAPP/Package.appxmanifest):
+In [`SmartThings.WAPP/Package.appxmanifest`](SmartThings.WAPP/Package.appxmanifest):
 
 - The UWP `Application Id="App"` keeps the `windows.appService` (`SampleInteropService`) and
-  `windows.fullTrustProcess` (`WPF\WPF.exe`) extensions, plus the service:
+  `windows.fullTrustProcess` (`SmartThings.AVplayer\SmartThings.AVplayer.exe`) extensions, plus the
+  service:
   ```xml
   <desktop6:Extension Category="windows.service"
-      Executable="TrayLauncherService\TrayLauncherService.exe"
+      Executable="SmartThings.Service\SmartThings.Service.exe"
       EntryPoint="Windows.FullTrustApplication">
-    <desktop6:Service Name="TrayLauncherService" StartupType="auto" StartAccount="localSystem" />
+    <desktop6:Service Name="SmartThings.Service" StartupType="auto" StartAccount="localSystem" />
   </desktop6:Extension>
   ```
 - Two hidden full-trust entries (`AppListEntry="none"`), each with a `uap5:AppExecutionAlias` the
-  service launches: `Application Id="TrayHelper"` → `DesktopBridgeTray.exe`, and
-  `Application Id="WpfHost"` (`WPF\WPF.exe`) → `DesktopBridgeWpf.exe`.
+  service launches: `Application Id="TrayHelper"` (`SmartThings.Tray\SmartThings.Tray.exe`) →
+  `DesktopBridgeTray.exe`, and `Application Id="WpfHost"`
+  (`SmartThings.AVplayer\SmartThings.AVplayer.exe`) → `DesktopBridgeWpf.exe`.
 - Capabilities: `internetClient`, `runFullTrust`, and (restricted) `packagedServices` +
   `localSystemServices`.
 
@@ -76,21 +84,21 @@ In [`WAPP/Package.appxmanifest`](WAPP/Package.appxmanifest):
 ### Builds with the .NET 8 SDK (no Visual Studio)
 
 ```sh
-dotnet build WPF/WPF.csproj -c Release
-dotnet build TrayLauncherService/TrayLauncherService.csproj -c Release
+dotnet build SmartThings.AVplayer/SmartThings.AVplayer.csproj -c Release
+dotnet build SmartThings.Service/SmartThings.Service.csproj -c Release
 ```
 
-The native **TrayHelper** (C++) builds with the installed VC++ Build Tools:
+The native **SmartThings.Tray** (C++) builds with the installed VC++ Build Tools:
 
 ```sh
-msbuild TrayHelper/TrayHelper.vcxproj -p:Configuration=Release -p:Platform=x64
+msbuild SmartThings.Tray/SmartThings.Tray.vcxproj -p:Configuration=Release -p:Platform=x64
 ```
 
 ### Requires Visual Studio
 
-`DesktopBridge` (UWP) and `WAPP` (MSIX packaging) need **Visual Studio 2022/2026** with the
-**Universal Windows Platform development** and **.NET / MSIX Packaging Tools** workloads
-(plus the **Desktop development with C++** workload for `TrayHelper`), and Windows SDK
+`SmartThings.UI` (UWP) and `SmartThings.WAPP` (MSIX packaging) need **Visual Studio 2022/2026** with
+the **Universal Windows Platform development** and **.NET / MSIX Packaging Tools** workloads
+(plus the **Desktop development with C++** workload for `SmartThings.Tray`), and Windows SDK
 **10.0.26100.0**. Open `DesktopBridge.sln`, set **WAPP** as startup, choose `x64`, and Build /
 Deploy to produce and install the MSIX. CI ([`.github/workflows/build-and-release.yml`](../.github/workflows/build-and-release.yml))
 does this on a GitHub `windows-latest` runner.

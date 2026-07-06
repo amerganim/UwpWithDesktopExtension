@@ -12,7 +12,7 @@
   <Identity
     Name="16d8fb9e-dfee-4bd6-9bc2-f6b775863920"
     Publisher="CN=User"
-    Version="1.4.0.0" />
+    Version="1.5.0.0" />
 
   <Properties>
     <DisplayName>WAPP</DisplayName>
@@ -52,7 +52,7 @@
 
         <desktop:Extension
             Category="windows.fullTrustProcess"
-            Executable="WPF\WPF.exe">
+            Executable="SmartThings.AVplayer\SmartThings.AVplayer.exe">
           <desktop:FullTrustProcess>
             <desktop:ParameterGroup GroupId="Background" Parameters="/background" />
             <desktop:ParameterGroup GroupId="WPF" Parameters="/wpf" />
@@ -73,10 +73,10 @@
         -->
         <desktop6:Extension
             Category="windows.service"
-            Executable="TrayLauncherService\TrayLauncherService.exe"
+            Executable="SmartThings.Service\SmartThings.Service.exe"
             EntryPoint="Windows.FullTrustApplication">
           <desktop6:Service
-              Name="TrayLauncherService"
+              Name="SmartThings.Service"
               StartupType="auto"
               StartAccount="localSystem" />
         </desktop6:Extension>
@@ -86,11 +86,11 @@
 
     <!--
       Hidden full-trust entry for the native C++ tray helper. It owns the system tray icon and is
-      launched by TrayLauncherService (via the AppExecutionAlias below). From the tray the user can
+      launched by SmartThings.Service (via the AppExecutionAlias below). From the tray the user can
       open or exit the main UWP app. AppListEntry="none" keeps it out of the Start menu.
     -->
     <Application Id="TrayHelper"
-      Executable="TrayHelper\TrayHelper.exe"
+      Executable="SmartThings.Tray\SmartThings.Tray.exe"
       EntryPoint="Windows.FullTrustApplication">
       <uap:VisualElements
         DisplayName="DesktopBridge Tray"
@@ -118,7 +118,7 @@
       app). AppListEntry="none" keeps it out of the Start menu.
     -->
     <Application Id="WpfHost"
-      Executable="WPF\WPF.exe"
+      Executable="SmartThings.AVplayer\SmartThings.AVplayer.exe"
       EntryPoint="Windows.FullTrustApplication">
       <uap:VisualElements
         DisplayName="DesktopBridge WPF"

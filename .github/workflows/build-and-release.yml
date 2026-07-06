@@ -18,7 +18,7 @@ permissions:
 
 env:
   SOLUTION: DesktopBridge/DesktopBridge.sln
-  WAPPROJ: DesktopBridge/WAPP/WAPP.wapproj
+  WAPPROJ: DesktopBridge/SmartThings.WAPP/SmartThings.WAPP.wapproj
   CONFIGURATION: Release
   PLATFORM: x64
   # Password for the throwaway self-signed certificate generated in CI to sign the sideload package.
@@ -48,14 +48,14 @@ jobs:
       - name: Build WPF + service (.NET SDK)
         shell: pwsh
         run: |
-          dotnet build DesktopBridge/WPF/WPF.csproj -c $env:CONFIGURATION
-          dotnet build DesktopBridge/TrayLauncherService/TrayLauncherService.csproj -c $env:CONFIGURATION
+          dotnet build DesktopBridge/SmartThings.AVplayer/SmartThings.AVplayer.csproj -c $env:CONFIGURATION
+          dotnet build DesktopBridge/SmartThings.Service/SmartThings.Service.csproj -c $env:CONFIGURATION
 
       - name: Generate self-signed signing certificate
         id: cert
         shell: pwsh
         run: |
-          # The certificate subject MUST match the Publisher in WAPP/Package.appxmanifest (CN=User).
+          # The certificate subject MUST match the Publisher in the package manifest (CN=User).
           $securePwd = ConvertTo-SecureString -String $env:PFX_PASSWORD -Force -AsPlainText
           $cert = New-SelfSignedCertificate `
             -Type Custom `
@@ -111,7 +111,7 @@ jobs:
         id: stage
         shell: pwsh
         run: |
-          $appPackages = Join-Path $env:GITHUB_WORKSPACE 'DesktopBridge/WAPP/AppPackages'
+          $appPackages = Join-Path $env:GITHUB_WORKSPACE 'DesktopBridge/SmartThings.WAPP/AppPackages'
           if (-not (Test-Path $appPackages)) {
             Write-Error "AppPackages folder not found at $appPackages"
             exit 1

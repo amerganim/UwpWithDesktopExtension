@@ -3,6 +3,9 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net8.0-windows10.0.26100.0</TargetFramework>
+    <!-- Project renamed to SmartThings.AVplayer; keep the code namespace "WPF" (x:Class etc.). -->
+    <AssemblyName>SmartThings.AVplayer</AssemblyName>
+    <RootNamespace>WPF</RootNamespace>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>

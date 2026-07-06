@@ -30,7 +30,7 @@
   <PropertyGroup Label="Globals">
     <VCProjectVersion>17.0</VCProjectVersion>
     <ProjectGuid>{EAAF65E1-B1A3-40FF-B6BE-BA9003A08D7B}</ProjectGuid>
-    <RootNamespace>TrayHelper</RootNamespace>
+    <RootNamespace>SmartThings.Tray</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
 

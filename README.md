@@ -12,17 +12,21 @@ The Visual Studio solution lives in [`DesktopBridge/`](DesktopBridge/). See
 
 | Project | Type | Role |
 | --- | --- | --- |
-| `DesktopBridge` | UWP (UAP) | Hosts the `SampleInteropService` app service; launches the full-trust WPF process. |
-| `WPF` | .NET 8 WPF (full trust) | Bidirectional app-service (IPC) client + demo UI. No tray icon. |
-| `TrayHelper` | Native C++ Win32 | Owns the system tray icon (Open / Exit). |
-| `TrayLauncherService` | .NET 8 Windows service | LocalSystem, auto-start. Launches TrayHelper in the user session after install / at boot / on logon. |
-| `WAPP` | MSIX packaging (`.wapproj`) | Bundles everything; declares the service. |
+| `SmartThings.UI` | UWP (UAP) | Hosts the `SampleInteropService` app service; launches the full-trust player process. |
+| `SmartThings.AVplayer` | .NET 8 WPF (full trust) | Bidirectional app-service (IPC) client + demo UI. No tray icon. |
+| `SmartThings.Tray` | Native C++ Win32 | Owns the system tray icon (Open / Exit). |
+| `SmartThings.Service` | .NET 8 Windows service | LocalSystem, auto-start. Launches the tray in the user session after install / at boot / on logon. |
+| `SmartThings.WAPP` | MSIX packaging (`.wapproj`) | Bundles everything; declares the service. |
+
+> Project files/folders and assembly names are `SmartThings.*`; the internal C# code namespaces
+> (`DesktopBridge`, `WPF`, `TrayLauncherService`) are unchanged.
 
 ## Build at a glance
 
-- `WPF` and `TrayLauncherService` build with the **.NET 8 SDK** (`dotnet build`); `TrayHelper`
-  builds with the **VC++ Build Tools** (`msbuild TrayHelper/TrayHelper.vcxproj`).
-- `DesktopBridge` (UWP) and `WAPP` (MSIX packaging) require **Visual Studio** with the
+- `SmartThings.AVplayer` and `SmartThings.Service` build with the **.NET 8 SDK** (`dotnet build`);
+  `SmartThings.Tray` builds with the **VC++ Build Tools**
+  (`msbuild SmartThings.Tray/SmartThings.Tray.vcxproj`).
+- `SmartThings.UI` (UWP) and `SmartThings.WAPP` (MSIX packaging) require **Visual Studio** with the
   *Universal Windows Platform development*, *MSIX Packaging Tools*, and *Desktop development with
   C++* workloads — they cannot be built with the .NET SDK alone.
 

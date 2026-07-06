@@ -8,7 +8,7 @@
     <OutputType>AppContainerExe</OutputType>
     <AppDesignerFolder>Properties</AppDesignerFolder>
     <RootNamespace>DesktopBridge</RootNamespace>
-    <AssemblyName>DesktopBridge</AssemblyName>
+    <AssemblyName>SmartThings.UI</AssemblyName>
     <DefaultLanguage>en-US</DefaultLanguage>
     <TargetPlatformIdentifier>UAP</TargetPlatformIdentifier>
     <TargetPlatformVersion Condition=" '$(TargetPlatformVersion)' == '' ">10.0.26100.0</TargetPlatformVersion>
