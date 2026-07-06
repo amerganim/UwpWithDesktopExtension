@@ -16,8 +16,11 @@ namespace TrayLauncherService
         // Must match the desktop6:Service Name in SmartThings.WAPP/Package.appxmanifest.
         public const string ServiceNameConst = "SmartThings.Service";
 
-        // How long WPF is allowed to run before the service kills it.
+        // How long the player is allowed to run before the service kills it.
         private static readonly TimeSpan WpfLifetime = TimeSpan.FromSeconds(5);
+
+        // Process image name (no .exe) of the player - the AssemblyName of SmartThings.AVplayer.
+        private const string PlayerProcessName = "SmartThings.AVplayer";
 
         public TrayService()
         {
@@ -83,21 +86,26 @@ namespace TrayLauncherService
         }
 
         /// <summary>
-        /// Terminates the WPF process (image name "WPF.exe"). LocalSystem can terminate the user's
-        /// process. Best effort.
+        /// Terminates the player process (image name "SmartThings.AVplayer.exe"). LocalSystem can
+        /// terminate the user's process. Best effort.
         /// </summary>
         private static void KillWpf()
         {
-            foreach (Process process in Process.GetProcessesByName("WPF"))
+            Process[] players = Process.GetProcessesByName(PlayerProcessName);
+            if (players.Length == 0)
+            {
+                ServiceLog.Write($"No '{PlayerProcessName}' process found to kill.");
+            }
+            foreach (Process process in players)
             {
                 try
                 {
-                    ServiceLog.Write($"Killing WPF (pid {process.Id}).");
+                    ServiceLog.Write($"Killing {PlayerProcessName} (pid {process.Id}).");
                     process.Kill();
                 }
                 catch (Exception ex)
                 {
-                    ServiceLog.Write($"Kill WPF failed: {ex.Message}");
+                    ServiceLog.Write($"Kill {PlayerProcessName} failed: {ex.Message}");
                 }
                 finally
                 {
