@@ -51,6 +51,14 @@ jobs:
           dotnet build DesktopBridge/SmartThings.AVplayer/SmartThings.AVplayer.csproj -c $env:CONFIGURATION
           dotnet build DesktopBridge/SmartThings.Service/SmartThings.Service.csproj -c $env:CONFIGURATION
 
+      # Build and run the native C++ repository library demo (SQLite + Rx-like subject/observer).
+      - name: Build and run repository demo (C++)
+        shell: pwsh
+        run: |
+          msbuild DesktopBridge/SmartThings.Repository.Demo/SmartThings.Repository.Demo.vcxproj `
+            /p:Configuration=$env:CONFIGURATION /p:Platform=$env:PLATFORM
+          & "DesktopBridge/SmartThings.Repository.Demo/$env:PLATFORM/$env:CONFIGURATION/SmartThings.Repository.Demo.exe"
+
       - name: Generate self-signed signing certificate
         id: cert
         shell: pwsh
