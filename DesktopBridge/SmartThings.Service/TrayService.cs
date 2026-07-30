@@ -8,8 +8,16 @@ namespace TrayLauncherService
     /// logon it launches, in the interactive user session:
     ///   - the native TrayHelper (stays running - owns the tray icon), and
     ///   - the WPF process (only needed briefly).
-    /// After a short delay it kills WPF, then stops itself (its work is done). It is auto-start, so
-    /// it runs again on the next boot; if no user is signed in yet it waits for logon.
+    /// After a short delay it kills WPF. The service then stays running (idle) and listens for
+    /// session changes so it can relaunch the tray on the next logon / unlock / reconnect.
+    ///
+    /// IMPORTANT: the service must NOT stop itself after launching. Windows Fast Startup (the default
+    /// for "Shut down") hibernates session 0 and restores it on the next power-on instead of doing a
+    /// cold boot, so auto-start services are NOT re-run. A service that had stopped itself stays
+    /// stopped after a Fast-Startup boot and never receives the logon event -> the tray never appears.
+    /// (A full "Restart" bypasses Fast Startup, which is why restarting worked but shutdown+power-on
+    /// did not.) Staying running means the live service receives SessionLogon after the resume and
+    /// relaunches the tray. The idle cost is negligible.
     /// </summary>
     public sealed class TrayService : ServiceBase
     {
@@ -21,6 +29,10 @@ namespace TrayLauncherService
 
         // Process image name (no .exe) of the player - the AssemblyName of SmartThings.AVplayer.
         private const string PlayerProcessName = "SmartThings.AVplayer";
+
+        // Process image name (no .exe) of the native tray helper - the Executable in the manifest's
+        // SmartThings.Tray application entry. Used to avoid launching a second tray icon.
+        private const string TrayProcessName = "SmartThings.Tray";
 
         public TrayService()
         {
@@ -37,7 +49,7 @@ namespace TrayLauncherService
             {
                 if (SessionLauncher.TryGetActiveSession(out uint sessionId))
                 {
-                    LaunchThenStop(sessionId);
+                    EnsureTrayRunning(sessionId);
                 }
                 else
                 {
@@ -57,17 +69,25 @@ namespace TrayLauncherService
                 case SessionChangeReason.ConsoleConnect:
                 case SessionChangeReason.RemoteConnect:
                     uint sessionId = (uint)changeDescription.SessionId;
-                    ThreadPool.QueueUserWorkItem(_ => LaunchThenStop(sessionId));
+                    ThreadPool.QueueUserWorkItem(_ => EnsureTrayRunning(sessionId));
                     break;
             }
         }
 
         /// <summary>
-        /// Launches TrayHelper + WPF in the session, then (after a delay) kills WPF and stops the
-        /// service. Only proceeds to kill/stop if the tray helper actually launched.
+        /// Ensures the tray helper is running in the given session. If it is already running there,
+        /// this is a no-op (so repeated logon/unlock events don't spawn duplicate tray icons).
+        /// Otherwise it launches TrayHelper + WPF, then (after a delay) kills WPF. The service stays
+        /// running either way - see the class summary for why it must not stop itself.
         /// </summary>
-        private void LaunchThenStop(uint sessionId)
+        private void EnsureTrayRunning(uint sessionId)
         {
+            if (IsTrayRunningInSession(sessionId))
+            {
+                ServiceLog.Write($"Tray already running in session {sessionId}; nothing to do.");
+                return;
+            }
+
             bool trayLaunched = SessionLauncher.LaunchInSession(sessionId, SessionLauncher.TrayAlias);
             bool wpfLaunched  = SessionLauncher.LaunchInSession(sessionId, SessionLauncher.WpfAlias);
             ServiceLog.Write($"Launch results: tray={trayLaunched}, wpf={wpfLaunched}.");
@@ -81,8 +101,41 @@ namespace TrayLauncherService
             // WPF was only needed briefly; give it a moment, then terminate it.
             Thread.Sleep(WpfLifetime);
             KillWpf();
+        }
 
-            StopSelf();
+        /// <summary>
+        /// True if a tray helper process is already running in the given session. The service runs in
+        /// session 0 and can see processes in every session, so we filter by SessionId to avoid
+        /// treating a tray in another user's session as ours.
+        /// </summary>
+        private static bool IsTrayRunningInSession(uint sessionId)
+        {
+            Process[] trays = Process.GetProcessesByName(TrayProcessName);
+            try
+            {
+                foreach (Process process in trays)
+                {
+                    try
+                    {
+                        if ((uint)process.SessionId == sessionId)
+                        {
+                            return true;
+                        }
+                    }
+                    catch
+                    {
+                        // Process may have exited between enumeration and access; ignore it.
+                    }
+                }
+                return false;
+            }
+            finally
+            {
+                foreach (Process process in trays)
+                {
+                    process.Dispose();
+                }
+            }
         }
 
         /// <summary>
@@ -117,31 +170,6 @@ namespace TrayLauncherService
         protected override void OnStop()
         {
             ServiceLog.Write("Service stopping.");
-        }
-
-        /// <summary>
-        /// Stops this service (nothing left to do after launching the tray). Runs on a background
-        /// thread, so the service has already reported Running to the SCM.
-        /// </summary>
-        private void StopSelf()
-        {
-            try
-            {
-                using var controller = new ServiceController(ServiceNameConst);
-                if (controller.Status is ServiceControllerStatus.StartPending)
-                {
-                    controller.WaitForStatus(ServiceControllerStatus.Running, TimeSpan.FromSeconds(10));
-                }
-                if (controller.Status is ServiceControllerStatus.Running)
-                {
-                    ServiceLog.Write("Work done; stopping the service.");
-                    controller.Stop();
-                }
-            }
-            catch (Exception ex)
-            {
-                ServiceLog.Write($"StopSelf failed: {ex.Message}");
-            }
         }
 
         /// <summary>
