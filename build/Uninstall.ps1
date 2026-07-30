@@ -14,6 +14,10 @@ Get-Process -Name 'TrayHelper' -ErrorAction SilentlyContinue | Stop-Process -For
 # Remove the logon autostart entry.
 Remove-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name $runName -ErrorAction SilentlyContinue
 
+# Remove the Task Scheduler logon task the service registers (must match LogonTaskName in
+# SmartThings.Service/TrayService.cs). Otherwise it lingers and tries to start a removed service.
+schtasks.exe /Delete /TN 'DesktopBridge Tray Logon' /F 2>$null
+
 # Uninstall the package.
 Get-AppxPackage -Name $identityName | Remove-AppxPackage
 
