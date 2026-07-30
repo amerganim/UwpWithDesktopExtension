@@ -4,8 +4,8 @@ using System.ServiceProcess;
 namespace TrayLauncherService
 {
     /// <summary>
-    /// Windows service (LocalSystem, auto-start). On start (after install / at boot / at logon) it
-    /// launches, in the interactive user session:
+    /// Windows service (LocalSystem, auto-start). On start (after install / at boot) and on user
+    /// logon it launches, in the interactive user session:
     ///   - the native TrayHelper (stays running - owns the tray icon), and
     ///   - the WPF process (only needed briefly).
     /// After a short delay it kills WPF, then STOPS ITSELF - its work is done, so it consumes no
@@ -14,23 +14,19 @@ namespace TrayLauncherService
     /// FAST STARTUP: Windows Fast Startup (the default for "Shut down") hibernates session 0 and
     /// restores it on the next power-on instead of doing a cold boot, so auto-start services are NOT
     /// re-run. A self-stopped service therefore stays stopped after a shutdown+power-on and would
-    /// never see the logon - so the tray would not appear (a full "Restart" bypasses Fast Startup,
-    /// which is why restarting worked but shutdown+power-on did not).
+    /// never see the logon (a full "Restart" bypasses Fast Startup, which is why restarting worked
+    /// but shutdown+power-on did not). That gap is covered by the manifest windows.startupTask
+    /// (SmartThings.WAPP/Package.appxmanifest), which launches the tray helper directly at every
+    /// logon - including the logon after a Fast-Startup resume. The tray helper is single-instance,
+    /// so a service-initiated launch and a startup-task launch never produce two icons.
     ///
-    /// To fix that WITHOUT keeping the service resident, the service registers a Task Scheduler
-    /// "at log on" task (see <see cref="EnsureLogonTaskRegistered"/>) whose action is to start this
-    /// service. Logon triggers DO fire on the interactive logon that follows a Fast-Startup resume,
-    /// so on every sign-in the task starts the service, the service launches the tray, then stops
-    /// again. The task is removed by Uninstall.ps1.
+    /// This service still handles install-time and cold-boot launches (and preloaded devices, where
+    /// the app may never be opened and the startup task's "run once" gate would otherwise apply).
     /// </summary>
     public sealed class TrayService : ServiceBase
     {
         // Must match the desktop6:Service Name in SmartThings.WAPP/Package.appxmanifest.
         public const string ServiceNameConst = "SmartThings.Service";
-
-        // Name of the Task Scheduler logon task that restarts this service on each sign-in.
-        // Keep in sync with build/Uninstall.ps1.
-        private const string LogonTaskName = "DesktopBridge Tray Logon";
 
         // How long the player is allowed to run before the service kills it.
         private static readonly TimeSpan WpfLifetime = TimeSpan.FromSeconds(5);
@@ -55,10 +51,6 @@ namespace TrayLauncherService
             ServiceLog.Write("Service starting.");
             ThreadPool.QueueUserWorkItem(_ =>
             {
-                // Make sure the logon task exists so we are restarted on future sign-ins (this is
-                // what survives Fast Startup). Idempotent and cheap.
-                EnsureLogonTaskRegistered();
-
                 if (SessionLauncher.TryGetActiveSession(out uint sessionId))
                 {
                     LaunchThenStop(sessionId);
@@ -150,64 +142,6 @@ namespace TrayLauncherService
                 {
                     process.Dispose();
                 }
-            }
-        }
-
-        /// <summary>
-        /// Registers (or refreshes) a Task Scheduler task that starts this service at every user
-        /// logon. Runs as SYSTEM so it can start the service. This is the piece that makes the tray
-        /// reappear after a Fast-Startup "Shut down -> power on", where auto-start services are not
-        /// re-run. Best effort: if it fails the service still works for the current session.
-        /// </summary>
-        private static void EnsureLogonTaskRegistered()
-        {
-            try
-            {
-                string scPath = Path.Combine(Environment.SystemDirectory, "sc.exe");
-                var startInfo = new ProcessStartInfo
-                {
-                    FileName = Path.Combine(Environment.SystemDirectory, "schtasks.exe"),
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                };
-                // schtasks /Create /TN "<task>" /TR "<sc.exe> start <service>" /SC ONLOGON
-                //          /RU SYSTEM /RL HIGHEST /F
-                startInfo.ArgumentList.Add("/Create");
-                startInfo.ArgumentList.Add("/TN");
-                startInfo.ArgumentList.Add(LogonTaskName);
-                startInfo.ArgumentList.Add("/TR");
-                startInfo.ArgumentList.Add($"{scPath} start {ServiceNameConst}");
-                startInfo.ArgumentList.Add("/SC");
-                startInfo.ArgumentList.Add("ONLOGON");
-                startInfo.ArgumentList.Add("/RU");
-                startInfo.ArgumentList.Add("SYSTEM");
-                startInfo.ArgumentList.Add("/RL");
-                startInfo.ArgumentList.Add("HIGHEST");
-                startInfo.ArgumentList.Add("/F");
-
-                using Process? proc = Process.Start(startInfo);
-                if (proc is null)
-                {
-                    ServiceLog.Write("Could not start schtasks.exe to register the logon task.");
-                    return;
-                }
-
-                proc.WaitForExit(TimeSpan.FromSeconds(15));
-                if (proc.ExitCode == 0)
-                {
-                    ServiceLog.Write($"Logon task '{LogonTaskName}' registered.");
-                }
-                else
-                {
-                    string err = proc.StandardError.ReadToEnd().Trim();
-                    ServiceLog.Write($"schtasks returned {proc.ExitCode} registering the logon task. {err}");
-                }
-            }
-            catch (Exception ex)
-            {
-                ServiceLog.Write($"EnsureLogonTaskRegistered failed: {ex.Message}");
             }
         }
 
