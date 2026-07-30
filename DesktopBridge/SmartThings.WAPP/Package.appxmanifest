@@ -109,6 +109,21 @@
             <uap5:ExecutionAlias Alias="DesktopBridgeTray.exe" />
           </uap5:AppExecutionAlias>
         </uap5:Extension>
+        <!--
+          Launch the tray helper at every user logon. This is what makes the tray reappear after a
+          Fast Startup "Shut down -> power on": the auto-start service is NOT re-run on a hybrid
+          resume, but logon startup tasks DO fire. Registered and removed with the package (no
+          orphaned system artifacts on a right-click uninstall). The tray helper is single-instance,
+          so this never produces a duplicate icon alongside a service-initiated launch.
+        -->
+        <desktop:Extension Category="windows.startupTask"
+            Executable="SmartThings.Tray\SmartThings.Tray.exe"
+            EntryPoint="Windows.FullTrustApplication">
+          <desktop:StartupTask
+              TaskId="DesktopBridgeTrayStartup"
+              Enabled="true"
+              DisplayName="DesktopBridge Tray" />
+        </desktop:Extension>
       </Extensions>
     </Application>
 

@@ -8,8 +8,20 @@ namespace TrayLauncherService
     /// logon it launches, in the interactive user session:
     ///   - the native TrayHelper (stays running - owns the tray icon), and
     ///   - the WPF process (only needed briefly).
-    /// After a short delay it kills WPF, then stops itself (its work is done). It is auto-start, so
-    /// it runs again on the next boot; if no user is signed in yet it waits for logon.
+    /// After a short delay it kills WPF, then STOPS ITSELF - its work is done, so it consumes no
+    /// memory while idle.
+    ///
+    /// FAST STARTUP: Windows Fast Startup (the default for "Shut down") hibernates session 0 and
+    /// restores it on the next power-on instead of doing a cold boot, so auto-start services are NOT
+    /// re-run. A self-stopped service therefore stays stopped after a shutdown+power-on and would
+    /// never see the logon (a full "Restart" bypasses Fast Startup, which is why restarting worked
+    /// but shutdown+power-on did not). That gap is covered by the manifest windows.startupTask
+    /// (SmartThings.WAPP/Package.appxmanifest), which launches the tray helper directly at every
+    /// logon - including the logon after a Fast-Startup resume. The tray helper is single-instance,
+    /// so a service-initiated launch and a startup-task launch never produce two icons.
+    ///
+    /// This service still handles install-time and cold-boot launches (and preloaded devices, where
+    /// the app may never be opened and the startup task's "run once" gate would otherwise apply).
     /// </summary>
     public sealed class TrayService : ServiceBase
     {
@@ -21,6 +33,10 @@ namespace TrayLauncherService
 
         // Process image name (no .exe) of the player - the AssemblyName of SmartThings.AVplayer.
         private const string PlayerProcessName = "SmartThings.AVplayer";
+
+        // Process image name (no .exe) of the native tray helper - the Executable in the manifest's
+        // SmartThings.Tray application entry. Used to avoid launching a second tray icon.
+        private const string TrayProcessName = "SmartThings.Tray";
 
         public TrayService()
         {
@@ -63,11 +79,20 @@ namespace TrayLauncherService
         }
 
         /// <summary>
-        /// Launches TrayHelper + WPF in the session, then (after a delay) kills WPF and stops the
-        /// service. Only proceeds to kill/stop if the tray helper actually launched.
+        /// Launches the tray helper (+ WPF) in the session if it isn't already there, kills WPF after
+        /// a short delay, then stops the service. If the tray is already running in the session this
+        /// is a no-op except for stopping the service. The logon task (registered in OnStart) restarts
+        /// the service on the next sign-in, including after a Fast-Startup resume.
         /// </summary>
         private void LaunchThenStop(uint sessionId)
         {
+            if (IsTrayRunningInSession(sessionId))
+            {
+                ServiceLog.Write($"Tray already running in session {sessionId}; nothing to launch.");
+                StopSelf();
+                return;
+            }
+
             bool trayLaunched = SessionLauncher.LaunchInSession(sessionId, SessionLauncher.TrayAlias);
             bool wpfLaunched  = SessionLauncher.LaunchInSession(sessionId, SessionLauncher.WpfAlias);
             ServiceLog.Write($"Launch results: tray={trayLaunched}, wpf={wpfLaunched}.");
@@ -83,6 +108,41 @@ namespace TrayLauncherService
             KillWpf();
 
             StopSelf();
+        }
+
+        /// <summary>
+        /// True if a tray helper process is already running in the given session. The service runs in
+        /// session 0 and can see processes in every session, so we filter by SessionId to avoid
+        /// treating a tray in another user's session as ours.
+        /// </summary>
+        private static bool IsTrayRunningInSession(uint sessionId)
+        {
+            Process[] trays = Process.GetProcessesByName(TrayProcessName);
+            try
+            {
+                foreach (Process process in trays)
+                {
+                    try
+                    {
+                        if ((uint)process.SessionId == sessionId)
+                        {
+                            return true;
+                        }
+                    }
+                    catch
+                    {
+                        // Process may have exited between enumeration and access; ignore it.
+                    }
+                }
+                return false;
+            }
+            finally
+            {
+                foreach (Process process in trays)
+                {
+                    process.Dispose();
+                }
+            }
         }
 
         /// <summary>
@@ -120,8 +180,9 @@ namespace TrayLauncherService
         }
 
         /// <summary>
-        /// Stops this service (nothing left to do after launching the tray). Runs on a background
-        /// thread, so the service has already reported Running to the SCM.
+        /// Stops this service (nothing left to do after launching the tray - the logon task will
+        /// restart it on the next sign-in). Runs on a background thread, so the service has already
+        /// reported Running to the SCM.
         /// </summary>
         private void StopSelf()
         {
